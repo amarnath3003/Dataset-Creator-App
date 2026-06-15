@@ -1,7 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { llmApi } from '../api/api';
-import { Cpu, Globe, RefreshCw, AlertCircle, CheckCircle, ChevronDown } from 'lucide-react';
+import React, { useRef, useCallback } from 'react';
+import { Cpu, Globe, ChevronDown } from 'lucide-react';
 
 import { OPENAI_MODELS, CustomSelect, ProviderBtn, LocalSection, ApiSection } from './LLMSetup';
 
@@ -31,7 +29,7 @@ export function Slider({ label, min, max, step, value, onChange, disabled }) {
 
         // 2. Propagate the snapped value to parent
         onChange(clamp(min + ratio * (max - min)));
-    }, [min, max, clamp, onChange]);
+    }, [min, max, clamp, onChange, disabled]);
 
     const onPointerDown = useCallback((e) => {
         if (disabled) return;

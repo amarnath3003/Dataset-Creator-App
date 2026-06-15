@@ -20,6 +20,7 @@ export default function PromptEditor() {
     });
 
     useEffect(() => {
+        // eslint-disable-next-line
         if (data?.prompt) { setPrompt(data.prompt); setIsDirty(false); }
     }, [data]);
 

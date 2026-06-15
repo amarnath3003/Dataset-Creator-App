@@ -5,16 +5,19 @@ import re
 from collections import Counter
 from PIL import Image
 
+
 def get_text_hash(text: str) -> str:
     """
     Creates a SHA-256 hash of string to find exact duplicates.
     """
     normalized = text.lower().strip()
-    return hashlib.sha256(normalized.encode('utf-8')).hexdigest()
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
 
 def text_to_vector(text: str) -> Counter:
-    words = re.compile(r'\w+').findall(text.lower())
+    words = re.compile(r"\w+").findall(text.lower())
     return Counter(words)
+
 
 def get_cosine(vec1: Counter, vec2: Counter) -> float:
     intersection = set(vec1.keys()) & set(vec2.keys())
@@ -26,7 +29,10 @@ def get_cosine(vec1: Counter, vec2: Counter) -> float:
         return 0.0
     return float(numerator) / denominator
 
-def is_near_duplicate(text: str, seen_vectors: list[Counter], threshold: float = 0.85) -> bool:
+
+def is_near_duplicate(
+    text: str, seen_vectors: list[Counter], threshold: float = 0.85
+) -> bool:
     """
     Checks if a text payload is a near-duplicate of previously seen items.
     Updates the seen_vectors list if it is novel.
@@ -35,9 +41,10 @@ def is_near_duplicate(text: str, seen_vectors: list[Counter], threshold: float =
     for vec2 in seen_vectors:
         if get_cosine(vec1, vec2) > threshold:
             return True
-            
+
     seen_vectors.append(vec1)
     return False
+
 
 def get_image_hash(filepath: str) -> str | None:
     """

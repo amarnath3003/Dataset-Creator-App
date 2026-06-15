@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { projectApi } from '../api/api';
 import {
     RefreshCw, Copy, ChevronDown, ChevronRight,
@@ -21,6 +21,7 @@ function copyToClipboard(text) {
 }
 
 // ─── Section Wrapper ──────────────────────────────────────────────────────────
+// eslint-disable-next-line no-unused-vars
 function Section({ title, icon: Icon, badge, children, copyData, loading }) {
     const [copied, setCopied] = useState(false);
     const handleCopy = () => {
@@ -117,7 +118,7 @@ function StageProgress({ status }) {
 }
 
 // ─── Pipeline Metadata ────────────────────────────────────────────────────────
-function MetadataSection({ status, projectName }) {
+function MetadataSection({ status }) {
     const hasAny = status?.has_raw || status?.has_cleaned || status?.has_chunks || status?.has_qa;
 
     const overallStatus = status?.has_qa ? 'Completed'
@@ -506,7 +507,7 @@ export default function DebugDashboard({ projectName, status, stopMutation }) {
                                     <p className="text-sm font-black text-red-300 uppercase tracking-widest">Pipeline Running</p>
                                     <p className="text-[11px] text-red-400/60 font-mono mt-0.5">
                                         {status?.progress
-                                            ? `Chunk ${status.progress.done} / ${status.progress.total} · ${status.progress.percent}%`
+                                            ? `Chunk ${status.progress.done} / ${status.progress.total} · ${status.progress.percent}%`
                                             : 'Initialising…'}
                                     </p>
                                 </div>

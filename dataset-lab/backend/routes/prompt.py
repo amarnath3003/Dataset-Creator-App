@@ -1,11 +1,11 @@
 from fastapi import APIRouter, HTTPException
 from pathlib import Path
 from backend.models import PromptUpdateRequest
-import os
 
 router = APIRouter()
 
 PROMPT_FILE = Path(__file__).parent.parent / "prompts" / "base_prompt.txt"
+
 
 @router.get("/")
 def get_prompt():
@@ -23,16 +23,17 @@ def get_prompt():
             "2. Behave like a normal helpful LLM.\n"
             "3. You may expand slightly for clarity, but stick to the facts in the text.\n"
             "4. Output MUST be a valid JSON list of objects strictly following this structure:\n"
-            "[\n  {{\"question\": \"The generated question\", \"answer\": \"The generated answer\"}}\n]\n"
+            '[\n  {{"question": "The generated question", "answer": "The generated answer"}}\n]\n'
             "5. Do not include any explanation, only the raw JSON list.\n"
         )
         PROMPT_FILE.write_text(default_prompt, encoding="utf-8")
-        
+
     try:
         content = PROMPT_FILE.read_text(encoding="utf-8")
         return {"prompt": content}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read prompt: {str(e)}")
+
 
 @router.post("/")
 def update_prompt(request: PromptUpdateRequest):
@@ -42,4 +43,6 @@ def update_prompt(request: PromptUpdateRequest):
         PROMPT_FILE.write_text(request.prompt, encoding="utf-8")
         return {"message": "Prompt updated successfully"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to update prompt: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to update prompt: {str(e)}"
+        )

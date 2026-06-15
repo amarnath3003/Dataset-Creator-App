@@ -2,7 +2,7 @@ import json
 import re
 import logging
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from backend.models import GenerationConfig
 from backend.llm.base import LLMProvider
 from backend.llm.local import LocalLLM
@@ -10,21 +10,24 @@ from backend.llm.openai import OpenAILLM
 
 logger = logging.getLogger(__name__)
 
+
 class GenerationEngine:
     def __init__(self):
         self.formats_path = Path(__file__).parent.parent / "formats" / "formats.json"
-        
+
     def _get_provider(self, config: GenerationConfig) -> LLMProvider:
         providers = {
             "openai": OpenAILLM,
             "ollama": LocalLLM,
             "local": LocalLLM,
         }
-        
+
         provider_class = providers.get(config.provider.lower())
         if not provider_class:
-            raise ValueError(f"Unsupported LLM provider: '{config.provider}'. Available: {list(providers.keys())}")
-            
+            raise ValueError(
+                f"Unsupported LLM provider: '{config.provider}'. Available: {list(providers.keys())}"
+            )
+
         return provider_class()
 
     def _write_error(self, project_path: Path, message: str):
@@ -37,9 +40,10 @@ class GenerationEngine:
     def _atomic_write_json(self, file_path: Path, data: Any):
         """Atomically write JSON to avoid read race conditions during front-end polling."""
         import time
-        temp_path = file_path.with_suffix('.tmp')
+
+        temp_path = file_path.with_suffix(".tmp")
         try:
-            with open(temp_path, 'w', encoding='utf-8') as f:
+            with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2 if isinstance(data, list) else None)
             # Retry loop for Windows strict file locking
             for attempt in range(5):
@@ -48,7 +52,9 @@ class GenerationEngine:
                     break
                 except PermissionError:
                     if attempt == 4:
-                        logger.error(f"Atomic write failed for {file_path} due to persistent lock.")
+                        logger.error(
+                            f"Atomic write failed for {file_path} due to persistent lock."
+                        )
                     time.sleep(0.1)
         except Exception as e:
             logger.error(f"Atomic write failed for {file_path}: {e}")
@@ -66,8 +72,13 @@ class GenerationEngine:
         except Exception:
             pass
 
-    def generate(self, project_path: Path, config: GenerationConfig,
-                 resume_from: int = 0, existing_qa: List[Dict[str, Any]] = None):
+    def generate(
+        self,
+        project_path: Path,
+        config: GenerationConfig,
+        resume_from: int = 0,
+        existing_qa: Optional[List[Dict[str, Any]]] = None,
+    ):
         error_log = project_path / "error.log"
         # Clear any previous generation errors so old messages don't persist
         if error_log.exists():
@@ -83,83 +94,95 @@ class GenerationEngine:
         # 1. Load Chunks
         chunks_path = project_path / "chunks.json"
         if not chunks_path.exists():
-            self._write_error(project_path, "[Generation] chunks.json not found — chunking stage may have failed.")
+            self._write_error(
+                project_path,
+                "[Generation] chunks.json not found — chunking stage may have failed.",
+            )
             return []
-            
+
         try:
-            with open(chunks_path, 'r', encoding='utf-8') as f:
+            with open(chunks_path, "r", encoding="utf-8") as f:
                 chunks = json.load(f)
         except Exception as e:
-            self._write_error(project_path, f"[Generation] Failed to load chunks.json: {e}")
+            self._write_error(
+                project_path, f"[Generation] Failed to load chunks.json: {e}"
+            )
             return []
 
         if not chunks:
-            self._write_error(project_path, "[Generation] chunks.json is empty — nothing to generate from.")
+            self._write_error(
+                project_path,
+                "[Generation] chunks.json is empty — nothing to generate from.",
+            )
             return []
-            
+
         # 2. Load Prompt Template
         prompt_path = Path(__file__).parent.parent / "prompts" / "base_prompt.txt"
-        with open(prompt_path, 'r', encoding='utf-8') as f:
+        with open(prompt_path, "r", encoding="utf-8") as f:
             base_prompt = f.read()
-        
+
         # 3. Initialize LLM
         llm = self._get_provider(config)
-        
+
         # Seed with existing partial results when resuming
         qa_results = list(existing_qa) if existing_qa else []
         chunk_errors = []
         total = len(chunks)
-        
+
         # Skip already-processed chunks when resuming
         chunks_to_process = chunks[resume_from:] if resume_from > 0 else chunks
         if resume_from > 0:
-            logger.info(f"[Generation] Resuming from chunk {resume_from}/{total}, {len(qa_results)} existing QA pairs loaded.")
-        
+            logger.info(
+                f"[Generation] Resuming from chunk {resume_from}/{total}, {len(qa_results)} existing QA pairs loaded."
+            )
+
         # Initialize / update qa_v1.json with whatever we already have
         qa_path = project_path / "qa_v1.json"
         self._atomic_write_json(qa_path, qa_results)
-        
+
         self._write_progress(project_path, resume_from, total, "starting")
-        
+
         # 4. Loop through chunks (offset index when resuming)
         for i, chunk in enumerate(chunks_to_process, start=resume_from):
             # Check for stop signal
             if (project_path / ".stop").exists():
-                logger.info(f"[Generation] Stop signal detected for {project_path.name}")
+                logger.info(
+                    f"[Generation] Stop signal detected for {project_path.name}"
+                )
                 # Save partial results if any
                 if qa_results:
                     partial_path = project_path / "qa_partial.json"
                     self._atomic_write_json(partial_path, qa_results)
-                
+
                 # Clean up lock files
                 if (project_path / ".running").exists():
                     (project_path / ".running").unlink()
                 (project_path / ".stop").unlink()
-                
+
                 self._write_progress(project_path, i, total, "stopped")
                 return qa_results
 
-            text = chunk['text']
+            text = chunk["text"]
 
-            token_count = chunk.get('token_count', len(text))
-            
+            token_count = chunk.get("token_count", len(text))
+
             # QA Count: density_factor per 300 tokens (default 1.0 = 1 pair per 300 tokens)
             qa_count = max(1, int((token_count / 300) * config.qa_density_factor))
-            
+
             # Formulate Prompt
             prompt = base_prompt.format(
-                domain=config.domain,
-                qa_count=qa_count,
-                chunk=text
+                domain=config.domain, qa_count=qa_count, chunk=text
             )
-            
+
             # Pydantic v2 uses model_dump(), v1 uses dict()
             try:
                 llm_config = config.model_dump()
             except AttributeError:
                 llm_config = config.dict()
 
-            self._write_progress(project_path, i, total, f"generating chunk {i+1}/{total}")
+            self._write_progress(
+                project_path, i, total, f"generating chunk {i+1}/{total}"
+            )
 
             # Call LLM
             try:
@@ -176,12 +199,12 @@ class GenerationEngine:
                         f"Provider: {config.provider}, Model: {config.model_name}\n"
                         f"Error: {e}\n\n"
                         f"If using Ollama, make sure 'ollama serve' is running and the model is pulled.\n"
-                        f"If using OpenAI, check that your API key is set in Settings."
+                        f"If using OpenAI, check that your API key is set in Settings.",
                     )
                     self._write_progress(project_path, 0, total, "error")
                     return []
                 continue
-            
+
             # Parse JSON from response
             try:
                 qas = None
@@ -190,7 +213,9 @@ class GenerationEngine:
                     qas = json.loads(response_text.strip())
                 except json.JSONDecodeError:
                     # Fallback: robust extraction of a JSON array containing objects
-                    json_match = re.search(r'\[\s*\{.*\}\s*\]', response_text, re.DOTALL)
+                    json_match = re.search(
+                        r"\[\s*\{.*\}\s*\]", response_text, re.DOTALL
+                    )
                     if json_match:
                         try:
                             qas = json.loads(json_match.group(0))
@@ -206,7 +231,7 @@ class GenerationEngine:
                 if qas is not None:
                     if isinstance(qas, list):
                         for qa in qas:
-                            qa['chunk_id'] = chunk['chunk_id']
+                            qa["chunk_id"] = chunk["chunk_id"]
                             qa_results.append(qa)
                         # ── Incremental save after every successful chunk ──
                         self._atomic_write_json(qa_path, qa_results)
@@ -241,13 +266,16 @@ class GenerationEngine:
         if not qa_results:
             error_summary = (
                 f"[Generation] Completed with 0 QA pairs generated from {len(chunks)} chunks.\n"
-                f"Chunk errors ({len(chunk_errors)}):\n" +
-                "\n".join(chunk_errors[:10])  # first 10 errors only
+                f"Chunk errors ({len(chunk_errors)}):\n"
+                + "\n".join(chunk_errors[:10])  # first 10 errors only
             )
             self._write_error(project_path, error_summary)
         elif chunk_errors:
-            logger.warning(f"[Generation] {len(chunk_errors)} chunk(s) failed, {len(qa_results)} QA pairs saved.")
-            
+            logger.warning(
+                f"[Generation] {len(chunk_errors)} chunk(s) failed, {len(qa_results)} QA pairs saved."
+            )
+
         return qa_results
+
 
 generation_engine = GenerationEngine()

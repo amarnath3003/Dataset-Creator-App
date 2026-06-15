@@ -5,9 +5,11 @@ import shutil
 
 router = APIRouter()
 
+
 @router.get("/")
 def list_all_projects():
     return list_projects()
+
 
 @router.post("/")
 def create_new_project(project: ProjectCreate):

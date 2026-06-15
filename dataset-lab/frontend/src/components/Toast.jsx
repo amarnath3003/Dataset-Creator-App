@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { CheckCircle, AlertCircle, Info, AlertTriangle, X } from 'lucide-react';
 
@@ -14,6 +15,10 @@ export const useToast = () => {
 export const ToastProvider = ({ children }) => {
     const [toasts, setToasts] = useState([]);
 
+    const removeToast = useCallback((id) => {
+        setToasts(prev => prev.filter(t => t.id !== id));
+    }, []);
+
     const addToast = useCallback((message, type = 'info', duration = 4000) => {
         const id = Math.random().toString(36).substring(2, 9);
         setToasts(prev => [...prev, { id, message, type }]);
@@ -23,11 +28,7 @@ export const ToastProvider = ({ children }) => {
                 removeToast(id);
             }, duration);
         }
-    }, []);
-
-    const removeToast = useCallback((id) => {
-        setToasts(prev => prev.filter(t => t.id !== id));
-    }, []);
+    }, [removeToast]);
 
     const toast = {
         success: (msg, duration) => addToast(msg, 'success', duration),
@@ -49,13 +50,6 @@ export const ToastProvider = ({ children }) => {
 };
 
 const ToastItem = ({ toast, onRemove }) => {
-    const icons = {
-        success: <CheckCircle className="text-green-400" size={16} />,
-        error: <AlertCircle className="text-red-400" size={16} />,
-        warn: <AlertTriangle className="text-yellow-400" size={16} />,
-        info: <Info className="text-blue-400" size={16} />,
-    };
-
     const ledStyles = {
         success: 'led-green shadow-[0_0_8px_rgba(74,222,128,0.3)]',
         error: 'led-red shadow-[0_0_8px_rgba(239,68,68,0.3)]',

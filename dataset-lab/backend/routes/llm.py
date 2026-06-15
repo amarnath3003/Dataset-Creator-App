@@ -5,6 +5,7 @@ router = APIRouter()
 
 OLLAMA_BASE_URL = "http://localhost:11434"
 
+
 @router.get("/ollama/models")
 def list_ollama_models():
     """Fetch locally available Ollama models."""

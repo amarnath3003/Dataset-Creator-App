@@ -27,3 +27,8 @@ Thumbs.db
 
 # VS Code
 .vscode/
+
+# Cache, Testing, and Linting Output
+.mypy_cache/
+.pytest_cache/
+lint_output*.txt

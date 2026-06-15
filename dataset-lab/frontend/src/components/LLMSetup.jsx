@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { llmApi } from '../api/api';
@@ -73,6 +74,7 @@ export function CustomSelect({ value, options, onChange }) {
     );
 }
 
+// eslint-disable-next-line no-unused-vars
 export function ProviderBtn({ active, onClick, icon: Icon, label, sublabel }) {
     return (
         <button
@@ -125,6 +127,7 @@ export function LocalSection({ generationConfig, setGenerationConfig }) {
         if (models.length > 0 && !models.includes(generationConfig.model_name)) {
             setGenerationConfig(prev => ({ ...prev, model_name: models[0], provider: 'local' }));
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [models]);
 
     return (

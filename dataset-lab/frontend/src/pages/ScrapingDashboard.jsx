@@ -202,6 +202,7 @@ export default function ScrapingDashboard() {
             }, 2000);
         }
         return () => clearInterval(interval);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeJobId, isRefining, name]);
 
     // Track states to localStorage

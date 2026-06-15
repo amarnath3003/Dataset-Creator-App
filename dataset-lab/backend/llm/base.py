@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
+from typing import Dict, Any
+
 
 class LLMProvider(ABC):
     @abstractmethod
@@ -8,4 +9,3 @@ class LLMProvider(ABC):
         Generate text from the LLM based on prompt and configuration.
         config may contain: model_name, temperature, max_tokens, top_p, etc.
         """
-        pass

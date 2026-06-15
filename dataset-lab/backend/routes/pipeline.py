@@ -1,6 +1,5 @@
 from fastapi import APIRouter, File, UploadFile, BackgroundTasks, HTTPException
 from pydantic import BaseModel
-from typing import Optional
 from pathlib import Path
 from backend.utils.filesystem import get_project_path, save_raw_text
 from backend.engines.cleaning import cleaning_engine
@@ -17,10 +16,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+
 class PipelineRunRequest(BaseModel):
     pipeline_config: PipelineConfig
     generation_config: GenerationConfig
     resume: bool = False
+
 
 def _get_qa_count(project_path: Path) -> int:
     qa_path = project_path / "qa_v1.json"
@@ -28,18 +29,19 @@ def _get_qa_count(project_path: Path) -> int:
         qa_path = project_path / "qa_partial.json"
     if qa_path.exists():
         try:
-            with open(qa_path, 'r', encoding='utf-8') as f:
+            with open(qa_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 return len(data) if isinstance(data, list) else 0
         except Exception:
             return 0
     return 0
 
+
 def _get_chunk_count(project_path: Path) -> int:
     chunks_path = project_path / "chunks.json"
     if chunks_path.exists():
         try:
-            with open(chunks_path, 'r', encoding='utf-8') as f:
+            with open(chunks_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 return len(data) if isinstance(data, list) else 0
         except Exception:
@@ -65,7 +67,7 @@ def run_pipeline_task(project_name: str, config: PipelineRunRequest):
             partial_path = project_path / "qa_partial.json"
             if partial_path.exists():
                 try:
-                    with open(partial_path, 'r', encoding='utf-8') as f:
+                    with open(partial_path, "r", encoding="utf-8") as f:
                         existing_qa = json.load(f)
                 except Exception:
                     existing_qa = []
@@ -100,13 +102,13 @@ def run_pipeline_task(project_name: str, config: PipelineRunRequest):
                 logger.error(f"[{project_name}] Raw text not found")
                 return
 
-            with open(raw_path, 'r', encoding='utf-8') as f:
+            with open(raw_path, "r", encoding="utf-8") as f:
                 raw_text = f.read()
 
             cleaned_text = cleaning_engine.process(raw_text)
 
             cleaned_path = project_path / "cleaned.txt"
-            with open(cleaned_path, 'w', encoding='utf-8') as f:
+            with open(cleaned_path, "w", encoding="utf-8") as f:
                 f.write(cleaned_text)
 
             # 2. Chunk
@@ -114,22 +116,23 @@ def run_pipeline_task(project_name: str, config: PipelineRunRequest):
             chunks = chunking_engine.chunk(
                 cleaned_text,
                 chunk_size=config.pipeline_config.chunk_size,
-                chunk_overlap=config.pipeline_config.chunk_overlap
+                chunk_overlap=config.pipeline_config.chunk_overlap,
             )
 
             # 3. Refine
             logger.info(f"[{project_name}] Starting Refinement...")
             chunks = embedding_refiner.refine(
-                chunks,
-                threshold=config.pipeline_config.similarity_threshold
+                chunks, threshold=config.pipeline_config.similarity_threshold
             )
 
             chunks_path = project_path / "chunks.json"
-            with open(chunks_path, 'w', encoding='utf-8') as f:
+            with open(chunks_path, "w", encoding="utf-8") as f:
                 json.dump(chunks, f, indent=2)
 
         # 4. Generate (shared by both paths)
-        logger.info(f"[{project_name}] Starting Generation (resume_from={resume_from})...")
+        logger.info(
+            f"[{project_name}] Starting Generation (resume_from={resume_from})..."
+        )
         generation_engine.generate(
             project_path,
             config.generation_config,
@@ -141,12 +144,14 @@ def run_pipeline_task(project_name: str, config: PipelineRunRequest):
     except Exception as e:
         logger.error(f"[{project_name}] Pipeline Failed: {e}")
         import traceback
+
         error_msg = f"{str(e)}\n{traceback.format_exc()}"
         with open(project_path / "error.log", "w", encoding="utf-8") as f:
             f.write(error_msg)
     finally:
         if running_file.exists():
             running_file.unlink()
+
 
 @router.post("/{project_name}/upload")
 async def upload_text(project_name: str, file: UploadFile = File(...)):
@@ -159,24 +164,31 @@ async def upload_text(project_name: str, file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.post("/{project_name}/run")
-def run_pipeline(project_name: str, config: PipelineRunRequest, background_tasks: BackgroundTasks):
+def run_pipeline(
+    project_name: str, config: PipelineRunRequest, background_tasks: BackgroundTasks
+):
     project_path = get_project_path(project_name)
     if (project_path / ".running").exists():
-        raise HTTPException(status_code=409, detail="Pipeline already running for this project")
-    
+        raise HTTPException(
+            status_code=409, detail="Pipeline already running for this project"
+        )
+
     background_tasks.add_task(run_pipeline_task, project_name, config)
     return {"message": "Pipeline started in background"}
+
 
 @router.post("/{project_name}/stop")
 def stop_pipeline(project_name: str):
     project_path = get_project_path(project_name)
     if not (project_path / ".running").exists():
         return {"message": "No active pipeline to stop"}
-    
+
     # Create stop flag
     (project_path / ".stop").touch()
     return {"message": "Stop signal sent"}
+
 
 @router.get("/{project_name}/status")
 def get_project_status(project_name: str):
@@ -186,15 +198,15 @@ def get_project_status(project_name: str):
         raise HTTPException(status_code=404, detail="Project not found")
 
     # ── File-based state detection ─────────────────────────────────────────
-    running     = (project_path / ".running").exists()
-    has_qa      = (project_path / "qa_v1.json").exists()
-    has_error   = (project_path / "error.log").exists()
+    running = (project_path / ".running").exists()
+    has_qa = (project_path / "qa_v1.json").exists()
+    has_error = (project_path / "error.log").exists()
     has_partial = (project_path / "qa_partial.json").exists()
-    has_raw     = (project_path / "raw.txt").exists()
+    has_raw = (project_path / "raw.txt").exists()
     has_cleaned = (project_path / "cleaned.txt").exists()
-    has_chunks  = (project_path / "chunks.json").exists()
+    has_chunks = (project_path / "chunks.json").exists()
 
-    stopped  = has_partial and not running
+    stopped = has_partial and not running
     # finished = pipeline done successfully (has QA, not actively running)
     # NOTE: we intentionally ignore has_error here — a stale error.log from a
     # previous partial run must not block the 'Complete' state.
@@ -211,30 +223,31 @@ def get_project_status(project_name: str):
 
     return {
         # ── canonical aliases ─────────────────────────────────────────────
-        "raw":       has_raw,
-        "cleaned":   has_cleaned,
-        "chunked":   has_chunks,
+        "raw": has_raw,
+        "cleaned": has_cleaned,
+        "chunked": has_chunks,
         "generated": has_qa,
-        "error":     has_error,
+        "error": has_error,
         # ── has_* aliases (used by frontend) ────────────────────────────
-        "has_raw":     has_raw,
+        "has_raw": has_raw,
         "has_cleaned": has_cleaned,
-        "has_chunks":  has_chunks,
-        "has_qa":      has_qa,
-        "has_error":   has_error,
+        "has_chunks": has_chunks,
+        "has_qa": has_qa,
+        "has_error": has_error,
         "has_partial": has_partial,
         # ── state flags ──────────────────────────────────────────────────
-        "running":  running,
-        "stopped":  stopped,
+        "running": running,
+        "stopped": stopped,
         "finished": finished,
         # ── counts & progress ────────────────────────────────────────────
-        "qa_count":    _get_qa_count(project_path),
+        "qa_count": _get_qa_count(project_path),
         "chunk_count": _get_chunk_count(project_path),
-        "progress":    progress,
+        "progress": progress,
     }
 
 
 # ── Read-only data preview endpoints (no pipeline logic) ──────────────────────
+
 
 @router.get("/{project_name}/data/cleaned")
 def get_cleaned_text(project_name: str):
@@ -244,12 +257,15 @@ def get_cleaned_text(project_name: str):
     if not cleaned_path.exists():
         raise HTTPException(status_code=404, detail="Cleaned text not available yet")
     cleaned_text = cleaned_path.read_text(encoding="utf-8")
-    raw_length = len(raw_path.read_text(encoding="utf-8")) if raw_path.exists() else None
+    raw_length = (
+        len(raw_path.read_text(encoding="utf-8")) if raw_path.exists() else None
+    )
     return {
         "cleaned_text": cleaned_text,
         "cleaned_length": len(cleaned_text),
         "raw_length": raw_length,
     }
+
 
 @router.get("/{project_name}/data/chunks")
 def get_chunks(project_name: str):
@@ -259,6 +275,7 @@ def get_chunks(project_name: str):
         raise HTTPException(status_code=404, detail="Chunks not available yet")
     chunks = json.loads(chunks_path.read_text(encoding="utf-8"))
     return {"chunks": chunks, "count": len(chunks)}
+
 
 @router.get("/{project_name}/data/qa")
 def get_qa_pairs(project_name: str):
