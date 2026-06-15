@@ -58,6 +58,8 @@ class GenerationEngine:
                     time.sleep(0.1)
         except Exception as e:
             logger.error(f"Atomic write failed for {file_path}: {e}")
+        finally:
+            temp_path.unlink(missing_ok=True)
 
     def _write_progress(self, project_path: Path, done: int, total: int, status: str):
         """Write live progress info so the frontend can poll it."""

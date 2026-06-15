@@ -46,4 +46,4 @@ class OpenAILLM(LLMProvider):
             data = response.json()
             return data["choices"][0]["message"]["content"]
         except Exception as e:
-            return f"Error calling OpenAI: {str(e)}"
+            raise RuntimeError(f"Error calling OpenAI: {str(e)}")

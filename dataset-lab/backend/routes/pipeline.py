@@ -52,7 +52,6 @@ def _get_chunk_count(project_path: Path) -> int:
 def run_pipeline_task(project_name: str, config: PipelineRunRequest):
     project_path = get_project_path(project_name)
     running_file = project_path / ".running"
-    running_file.touch()
 
     try:
         resume_from = 0
@@ -175,6 +174,7 @@ def run_pipeline(
             status_code=409, detail="Pipeline already running for this project"
         )
 
+    (project_path / ".running").touch()
     background_tasks.add_task(run_pipeline_task, project_name, config)
     return {"message": "Pipeline started in background"}
 
