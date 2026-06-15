@@ -6,6 +6,13 @@ Run: python install.py
 
 import os
 import sys
+
+# Force UTF-8 encoding for standard output and error to avoid UnicodeEncodeError on Windows
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', line_buffering=True)
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8', line_buffering=True)
+
 import subprocess
 import platform
 import shutil
