@@ -1,31 +1,33 @@
 from fastapi import APIRouter
+from pydantic import BaseModel
+
+from job_engine.queue import push_job
 
 router = APIRouter()
 
+
+class TrainingRequest(BaseModel):
+
+    model: str
+    dataset_path: str
+    training_type: str
+    config: dict
+
+
 @router.post("/create")
-def create_job():
-    return {"status": "Job created"}
+def create_training(request: TrainingRequest):
 
-@router.post("/start")
-def start_job():
-    return {"status": "Job started"}
+    job = {
+        "id": "job_001",
+        "model": request.model,
+        "dataset_path": request.dataset_path,
+        "training_type": request.training_type,
+        "config": request.config
+    }
 
-@router.post("/stop")
-def stop_job():
-    return {"status": "Job stopped"}
+    push_job(job)
 
-@router.post("/pause")
-def pause_job():
-    return {"status": "Job paused"}
-
-@router.post("/resume")
-def resume_job():
-    return {"status": "Job resumed"}
-
-@router.get("/logs/{job_id}")
-def get_logs(job_id: str):
-    return {"logs": [], "job_id": job_id}
-
-@router.get("/metrics/{job_id}")
-def get_metrics(job_id: str):
-    return {"metrics": {}, "job_id": job_id}
+    return {
+        "status": "queued",
+        "job_id": "job_001"
+    }

@@ -1,15 +1,11 @@
-import json
+_mock_queue = []
 
-class JobQueue:
-    def __init__(self):
-        # Placeholder for Redis connection
-        pass
-        
-    def push_job(self, job_data):
-        print(f"Pushing job: {job_data}")
-        return True
-        
-    def pop_job(self):
-        return None
+def push_job(job):
+    print(f"Pushing job: {job}")
+    _mock_queue.append(job)
+    return True
 
-queue = JobQueue()
+def pop_job():
+    if _mock_queue:
+        return _mock_queue.pop(0)
+    return None

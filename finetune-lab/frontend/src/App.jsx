@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import ModelSelectionPage from './modules/finetune/pages/ModelSelectionPage';
 import DatasetSelectionPage from './modules/finetune/pages/DatasetSelectionPage';
+import TrainingConfigPage from './modules/finetune/pages/TrainingConfigPage';
 import Navbar from './components/Navbar';
 import { ToastProvider } from './components/Toast';
 import './index.css';
@@ -20,6 +21,7 @@ function App() {
                 <Route path="/" element={<Navigate to="/finetune/models" />} />
                 <Route path="/finetune/models" element={<ModelSelectionPage />} />
                 <Route path="/finetune/datasets" element={<DatasetSelectionPage />} />
+                <Route path="/finetune/config" element={<TrainingConfigPage />} />
               </Routes>
             </main>
           </div>
