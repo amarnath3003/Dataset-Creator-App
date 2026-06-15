@@ -1,59 +1,96 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
-
+import { useParams, Link } from "react-router-dom";
 import { getTrainingStatus } from "../services/trainingApi";
+import { Activity, ArrowLeft, Loader2, AlertCircle } from "lucide-react";
 
 export default function RunDashboard() {
-
   const { id } = useParams();
-
   const [job, setJob] = useState(null);
 
   useEffect(() => {
-
       const interval = setInterval(async ()=>{
-
           const status = await getTrainingStatus(id);
-
           setJob(status);
-
       }, 2000);
-
       return ()=>clearInterval(interval);
-
   }, [id]);
 
-  if(!job) return <div className="text-xl font-medium animate-pulse">Loading Training Run...</div>
+  if(!job) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center gap-4">
+          <Loader2 size={48} className="text-neu-accent animate-spin mb-2" />
+          <h1 className="text-3xl font-light text-neu-text tracking-tight">Initializing Engine</h1>
+          <p className="text-neu-dim font-mono text-xs uppercase tracking-widest">Establishing connection to training cluster...</p>
+      </div>
+    );
+  }
 
   return (
+    <div className="max-w-5xl mx-auto space-y-8">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+          <Link
+              to="/finetune/hardware"
+              className="neu-btn flex items-center gap-2 px-4 py-2 text-sm text-neu-dim hover:text-neu-text rounded-xl no-underline"
+          >
+              <ArrowLeft size={16} />
+              Exit
+          </Link>
 
-    <div className="space-y-6">
-
-      <div className="flex flex-col space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight">Training Run Dashboard</h1>
-        <p className="text-neu-muted">Job ID: <span className="font-mono text-sm">{id}</span></p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="p-6 border border-neu-border bg-neu-surface rounded-xl">
-              <h3 className="text-sm font-medium text-neu-muted uppercase tracking-wider">Status</h3>
-              <p className="text-2xl font-bold mt-2 capitalize">{job.status}</p>
-          </div>
-          <div className="p-6 border border-neu-border bg-neu-surface rounded-xl">
-              <h3 className="text-sm font-medium text-neu-muted uppercase tracking-wider">Progress</h3>
-              <p className="text-2xl font-bold mt-2">{job.progress}%</p>
-          </div>
-          <div className="p-6 border border-neu-border bg-neu-surface rounded-xl">
-              <h3 className="text-sm font-medium text-neu-muted uppercase tracking-wider">Current Loss</h3>
-              <p className="text-2xl font-bold mt-2">{job.loss !== null ? job.loss : "Waiting..."}</p>
+          <div className="neu-inset px-4 py-2 rounded-xl">
+              <span className="font-mono text-xs text-neu-accent tracking-widest font-bold uppercase">RUN: {id.split('-')[0] || id}</span>
           </div>
       </div>
-      
-      {job.error && (
-        <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-500 rounded-lg">
-            Error: {job.error}
+
+      <div className="neu-section">
+        <div className="neu-section-header">
+          <h2 className="flex items-center gap-2 text-neu-text font-bold">
+            <Activity size={18} className="text-neu-dim" />
+            Training Telemetry
+          </h2>
+          <div className={`led ${job.status === 'running' ? 'led-green animate-pulse' : job.error ? 'led-red' : 'led-on'}`}></div>
         </div>
-      )}
+
+        <div className="neu-section-body space-y-8">
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="neu-stat">
+                  <span className="neu-stat-value text-neu-accent capitalize">{job.status}</span>
+                  <span className="neu-stat-label">System Status</span>
+              </div>
+              <div className="neu-stat">
+                  <span className="neu-stat-value">{job.progress}%</span>
+                  <span className="neu-stat-label">Overall Progress</span>
+              </div>
+              <div className="neu-stat">
+                  <span className="neu-stat-value">{job.loss !== null ? job.loss : "0.000"}</span>
+                  <span className="neu-stat-label">Validation Loss</span>
+              </div>
+          </div>
+
+          <div className="neu-trough p-4 rounded-xl">
+            <div className="flex justify-between text-xs font-mono text-neu-dim mb-2 uppercase tracking-widest">
+              <span>Training Epoch</span>
+              <span>{job.progress}%</span>
+            </div>
+            <div className="neu-progress-track w-full">
+              <div className="neu-progress-fill" style={{ width: `${job.progress}%` }}></div>
+            </div>
+          </div>
+
+          <div className="neu-terminal">
+            {`> Training Run Initialized [Job ID: ${id}]\n`}
+            {`> Awaiting streaming logs...`}
+          </div>
+          
+          {job.error && (
+            <div className="neu-alert-warn mt-4">
+                <AlertCircle size={16} />
+                <span>Engine Error: {job.error}</span>
+            </div>
+          )}
+        </div>
+      </div>
 
     </div>
   )
