@@ -1,4 +1,9 @@
-from datasets import load_dataset, Dataset
+try:
+    from datasets import load_dataset, Dataset
+except ImportError:
+    load_dataset = None
+    Dataset = None
+
 from core.dataset_engine.detector import DatasetDetector, DatasetFormat
 from core.dataset_engine.formatter import DatasetFormatter
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { createTrainingJob } from "../services/trainingApi";
-import { getModel } from "../services/modelApi";
+import { modelApi } from "../services/modelApi";
 import { Button } from "../../../components/Button";
 import { Cpu, Play, AlertTriangle, CheckCircle2, Server, Clock } from "lucide-react";
 
@@ -23,7 +23,7 @@ export default function HardwareSelectionPage() {
 
   useEffect(() => {
     if (modelId) {
-      getModel(modelId).then(data => setModelData(data)).catch(console.error);
+      modelApi.getModelDetails(modelId).then(data => setModelData(data)).catch(console.error);
     }
   }, [modelId]);
 

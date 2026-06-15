@@ -1,4 +1,8 @@
-from unsloth import FastLanguageModel
+try:
+    from unsloth import FastLanguageModel
+except ImportError:
+    FastLanguageModel = None
+
 
 class ModelLoader:
 

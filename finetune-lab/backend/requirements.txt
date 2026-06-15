@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+celery
+torch
+datasets
+trl
+transformers
+unsloth
+pydantic
+sqlalchemy
+peft
+accelerate
+bitsandbytes
