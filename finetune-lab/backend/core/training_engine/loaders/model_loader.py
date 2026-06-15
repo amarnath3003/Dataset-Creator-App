@@ -21,7 +21,12 @@ class ModelLoader:
                 model,
                 r=config.lora_rank,
                 lora_alpha=config.lora_alpha,
-                lora_dropout=config.lora_dropout
+                lora_dropout=config.lora_dropout,
+                target_modules=config.target_modules,
+                use_rslora=config.use_rslora,
+                use_gradient_checkpointing="unsloth",
+                random_state=3407,
+                loftq_config=None if not config.use_loftq else {} # Requires loftq setup if true
             )
 
         # full finetuning

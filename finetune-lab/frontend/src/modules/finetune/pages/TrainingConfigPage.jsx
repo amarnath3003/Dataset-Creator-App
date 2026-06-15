@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "../../../components/Button";
-import { Settings, Sliders, Cpu, Zap } from "lucide-react";
+import { Settings, Sliders, Cpu, Zap, Box } from "lucide-react";
 
 export default function TrainingConfigPage() {
   const navigate = useNavigate();
@@ -16,7 +16,10 @@ export default function TrainingConfigPage() {
     save_steps: 200,
     lora_rank: 16,
     lora_alpha: 16,
-    lora_dropout: 0.05
+    lora_dropout: 0.05,
+    use_rslora: false,
+    use_loftq: false,
+    packing: false
   });
 
   const handleUpdate = (field, value) => {
@@ -52,7 +55,11 @@ export default function TrainingConfigPage() {
             ].map(mode => (
               <button
                 key={mode.id}
-                onClick={() => handleUpdate('training_type', mode.id)}
+                onClick={() => {
+                  handleUpdate('training_type', mode.id);
+                  // CPT highly recommends packing
+                  if (mode.id === 'cpt') handleUpdate('packing', true);
+                }}
                 className={`neu-plate p-4 rounded-xl text-left transition-all duration-300 border-2 ${config.training_type === mode.id ? 'border-neu-accent shadow-[0_0_15px_rgba(255,107,0,0.1)]' : 'border-transparent hover:border-neu-dim/20'}`}
               >
                 <div className="font-bold text-neu-text">{mode.label}</div>
@@ -128,6 +135,29 @@ export default function TrainingConfigPage() {
               </div>
 
             </div>
+
+            {/* SFT / CPT Specific Settings */}
+            <div className={`space-y-4 transition-opacity duration-300 ${['sft', 'cpt'].includes(config.training_type) ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+              <h3 className="text-sm font-bold text-neu-text tracking-widest uppercase flex items-center gap-2 mt-6">
+                <Box size={14} className="text-neu-accent" />
+                Dataset Config
+              </h3>
+              <div className="neu-plate p-6 rounded-2xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-sm font-bold text-neu-text">Sequence Packing</label>
+                    <p className="text-[10px] text-neu-dim mt-1">Accelerates training for short sequences (5x speedup)</p>
+                  </div>
+                  <button 
+                    onClick={() => handleUpdate('packing', !config.packing)}
+                    className={`w-12 h-6 rounded-full p-1 transition-colors ${config.packing ? 'bg-neu-accent' : 'bg-neu-dark'}`}
+                  >
+                    <div className={`bg-white w-4 h-4 rounded-full transition-transform ${config.packing ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                  </button>
+                </div>
+              </div>
+            </div>
+
           </div>
 
           {/* LoRA Settings */}
@@ -136,7 +166,7 @@ export default function TrainingConfigPage() {
               <Sliders size={14} className="text-neu-accent" />
               Adapter Configuration
             </h3>
-            <div className={`neu-plate p-6 rounded-2xl space-y-4 transition-opacity duration-300 ${['lora', 'qlora'].includes(config.training_type) ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+            <div className={`neu-plate p-6 rounded-2xl space-y-6 transition-opacity duration-300 ${['lora', 'qlora'].includes(config.training_type) ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
               
               <div className="flex flex-col space-y-2">
                 <label className="text-[10px] font-bold text-neu-dim uppercase tracking-widest flex justify-between">
@@ -174,6 +204,34 @@ export default function TrainingConfigPage() {
                       onChange={(e) => handleUpdate('lora_dropout', Number(e.target.value))}
                       className="neu-input bg-transparent shadow-none"
                     />
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-white/5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-sm font-bold text-neu-text">RSLoRA</label>
+                    <p className="text-[10px] text-neu-dim mt-1">Rank-Stabilized LoRA (Unsloth optimized)</p>
+                  </div>
+                  <button 
+                    onClick={() => handleUpdate('use_rslora', !config.use_rslora)}
+                    className={`w-12 h-6 rounded-full p-1 transition-colors ${config.use_rslora ? 'bg-neu-accent' : 'bg-neu-dark'}`}
+                  >
+                    <div className={`bg-white w-4 h-4 rounded-full transition-transform ${config.use_rslora ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-sm font-bold text-neu-text">LoftQ Initialization</label>
+                    <p className="text-[10px] text-neu-dim mt-1">Improves QLoRA accuracy</p>
+                  </div>
+                  <button 
+                    onClick={() => handleUpdate('use_loftq', !config.use_loftq)}
+                    className={`w-12 h-6 rounded-full p-1 transition-colors ${config.use_loftq ? 'bg-neu-accent' : 'bg-neu-dark'}`}
+                  >
+                    <div className={`bg-white w-4 h-4 rounded-full transition-transform ${config.use_loftq ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                  </button>
                 </div>
               </div>
 

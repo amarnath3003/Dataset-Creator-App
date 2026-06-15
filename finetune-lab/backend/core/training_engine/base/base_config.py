@@ -27,10 +27,16 @@ class TrainingConfig(BaseModel):
     push_to_hub: bool = False
     hf_repo: Optional[str] = None
 
-    # LoRA only
+    # LoRA / QLoRA only
     lora_rank: int = 16
     lora_alpha: int = 16
     lora_dropout: float = 0
+    use_rslora: bool = False
+    use_loftq: bool = False
+    target_modules: list = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+
+    # SFT / CPT
+    packing: bool = False
 
     # export
     export_gguf: bool = False

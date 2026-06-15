@@ -17,6 +17,7 @@ class SFTTrainerEngine(BaseTrainer):
             model=self.model,
             train_dataset=self.dataset,
             dataset_text_field="text",
+            packing=self.config.packing,
             callbacks=[
                 StreamingCallback(self.sink)
             ]
