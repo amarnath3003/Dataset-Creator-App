@@ -1,7 +1,7 @@
 from trl import SFTTrainer
 from transformers import AutoProcessor
-from datasets import load_dataset
 from core.training_engine.base.base_trainer import BaseTrainer
+from core.training_engine.loaders.dataset_loader import DatasetLoader
 from core.training_engine.callbacks.streaming_callback import StreamingCallback
 
 class VisionTrainer(BaseTrainer):
@@ -12,12 +12,10 @@ class VisionTrainer(BaseTrainer):
         self.processor = AutoProcessor.from_pretrained(
              self.config.model_name
         )
+        self.tokenizer = self.processor.tokenizer if hasattr(self.processor, "tokenizer") else None
 
     def load_dataset(self):
-        self.dataset = load_dataset(
-            "json",
-            data_files=self.config.dataset_path
-        )["train"]
+        self.dataset = DatasetLoader.load(self.config.dataset_path, self.tokenizer)
 
     def build_trainer(self):
         self.trainer = SFTTrainer(

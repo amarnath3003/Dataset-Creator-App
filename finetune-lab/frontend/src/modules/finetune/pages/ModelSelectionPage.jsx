@@ -1,15 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../../../components/Button';
-import { Server, Download, Upload, Search } from 'lucide-react';
+import { Server, Download, Upload, Search, Database } from 'lucide-react';
+import { modelApi } from '../services/modelApi';
 
 export default function ModelSelectionPage() {
   const navigate = useNavigate();
-  const [source, setSource] = useState('huggingface'); // 'huggingface' | 'local'
+  const [source, setSource] = useState('registry'); // 'registry' | 'huggingface' | 'local'
   const [hfModelId, setHfModelId] = useState('');
   const [localFile, setLocalFile] = useState(null);
+  const [registryModels, setRegistryModels] = useState([]);
 
-  const isValid = source === 'huggingface' ? hfModelId.trim().length > 0 : localFile !== null;
+  useEffect(() => {
+    modelApi.getModels().then(setRegistryModels).catch(console.error);
+  }, []);
+
+  const isValid = (source === 'huggingface' || source === 'registry') ? hfModelId.trim().length > 0 : localFile !== null;
 
   return (
     <div className="neu-section max-w-4xl mx-auto">
@@ -22,10 +28,17 @@ export default function ModelSelectionPage() {
       </div>
       
       <div className="neu-section-body flex flex-col gap-8">
-        <p className="text-neu-dim text-sm">Select a base model from Hugging Face or upload a local GGUF/Safetensors file.</p>
+        <p className="text-neu-dim text-sm">Select a base model from the registry, Hugging Face, or upload a local file.</p>
 
         {/* Source Toggle */}
-        <div className="flex bg-neu-dark p-1.5 rounded-[22px] shadow-[var(--sh-trough)] max-w-md w-full border border-black/50">
+        <div className="flex bg-neu-dark p-1.5 rounded-[22px] shadow-[var(--sh-trough)] max-w-xl w-full border border-black/50">
+          <button
+            onClick={() => setSource('registry')}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-xs font-bold tracking-widest uppercase transition-all duration-300 ${source === 'registry' ? 'bg-neu-base text-neu-accent shadow-[var(--sh-flat)]' : 'text-neu-dim hover:text-neu-text'}`}
+          >
+            <Database size={16} />
+            Registry
+          </button>
           <button
             onClick={() => setSource('huggingface')}
             className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-xs font-bold tracking-widest uppercase transition-all duration-300 ${source === 'huggingface' ? 'bg-neu-base text-neu-accent shadow-[var(--sh-flat)]' : 'text-neu-dim hover:text-neu-text'}`}
@@ -47,7 +60,38 @@ export default function ModelSelectionPage() {
           
           <div className="absolute top-0 right-0 p-32 bg-neu-accent/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 opacity-50 pointer-events-none"></div>
 
-          {source === 'huggingface' ? (
+          {source === 'registry' ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-10 animate-in fade-in zoom-in-95 duration-300">
+              {registryModels.map(model => (
+                <div 
+                  key={model.id}
+                  onClick={() => setHfModelId(model.id)}
+                  className={`neu-plate p-6 rounded-2xl cursor-pointer transition-all duration-300 border-2 ${hfModelId === model.id ? 'border-neu-accent shadow-[0_0_20px_rgba(255,107,0,0.15)]' : 'border-transparent hover:border-neu-dim/20'}`}
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <h3 className="text-neu-text font-bold text-lg">{model.name}</h3>
+                    <span className="text-[10px] uppercase tracking-wider font-bold bg-neu-dark px-2 py-1 rounded-md text-neu-accent">{model.parameters}</span>
+                  </div>
+                  <p className="text-neu-dim text-xs mb-4 font-mono">{model.id}</p>
+                  
+                  <div className="flex flex-wrap gap-2">
+                    <span className="text-[10px] text-neu-dim/70 uppercase tracking-widest bg-neu-dark/50 px-2 py-1 rounded-md border border-white/5">
+                      VRAM: {model.min_vram}GB+
+                    </span>
+                    <span className="text-[10px] text-neu-dim/70 uppercase tracking-widest bg-neu-dark/50 px-2 py-1 rounded-md border border-white/5">
+                      CTX: {model.context_length / 1024}k
+                    </span>
+                  </div>
+                </div>
+              ))}
+              {registryModels.length === 0 && (
+                <div className="col-span-full text-center text-neu-dim py-10">
+                  <Database size={32} className="mx-auto mb-4 opacity-50" />
+                  <p>Loading model registry...</p>
+                </div>
+              )}
+            </div>
+          ) : source === 'huggingface' ? (
             <div className="flex flex-col gap-4 max-w-lg w-full mx-auto relative z-10 animate-in fade-in zoom-in-95 duration-300">
               <label className="text-[10px] font-bold text-neu-dim uppercase tracking-widest">Model ID</label>
               <div className="neu-trough relative">
@@ -59,7 +103,7 @@ export default function ModelSelectionPage() {
                     value={hfModelId}
                     onChange={(e) => setHfModelId(e.target.value)}
                     placeholder="meta-llama/Llama-3-8b"
-                    className="neu-input bg-transparent shadow-none pl-14 h-16 text-lg placeholder:text-neu-dim/30 focus:text-neu-accent"
+                    className="neu-input bg-transparent shadow-none pl-14 h-16 text-lg placeholder:text-neu-dim/30 focus:text-neu-accent outline-none"
                   />
               </div>
               <p className="text-xs font-mono text-neu-dim/60">Enter the repository name as it appears on Hugging Face (e.g. 'mistralai/Mistral-7B-v0.1').</p>
@@ -102,7 +146,7 @@ export default function ModelSelectionPage() {
 
         <div className="flex justify-end pt-4 border-t border-white/5 mt-4">
           <Button 
-            onClick={() => navigate('/finetune/datasets')} 
+            onClick={() => navigate('/finetune/datasets', { state: { modelId: hfModelId }})} 
             variant="primary" 
             size="lg"
             disabled={!isValid}

@@ -2,7 +2,7 @@ from trl import SFTTrainer
 from unsloth import FastLanguageModel
 from core.training_engine.base.base_trainer import BaseTrainer
 from core.training_engine.callbacks.streaming_callback import StreamingCallback
-from datasets import load_dataset
+from core.training_engine.loaders.dataset_loader import DatasetLoader
 
 class FullFinetuner(BaseTrainer):
 
@@ -16,10 +16,7 @@ class FullFinetuner(BaseTrainer):
             p.requires_grad = True
 
     def load_dataset(self):
-        self.dataset = load_dataset(
-            "json",
-            data_files=self.config.dataset_path
-        )["train"]
+        self.dataset = DatasetLoader.load(self.config.dataset_path, self.tokenizer)
 
     def build_trainer(self):
         self.trainer = SFTTrainer(
