@@ -6,29 +6,48 @@
 
 ---
 
-## 🚀 Quick Start  *(3 commands)*
+## ✨ Features
 
+- **🚀 Fully Automated Setup:** One-command installer configures everything (Python venv, pip, npm) automatically.
+- **🛡️ Bulletproof CLI Runner:** Custom-built terminal interface that gracefully handles older Windows terminals (cmd/PowerShell) with safe unicode fallbacks—no more `UnicodeEncodeError` crashes!
+- **🧠 Local & Cloud LLMs:** Seamlessly use local models via Ollama or cloud models via OpenAI/Anthropic APIs.
+- **📂 File-based Engineering:** Ingest, chunk, generate, and refine high-quality datasets directly from your local documents.
+- **🌐 Cross-Platform:** Works flawlessly on Windows, macOS, and Linux.
+
+---
+
+## 🚀 Quick Start
+
+### Windows
+```cmd
+# 1. Clone the repository
+git clone https://github.com/amarnath123456789/Dataset-Creator-App.git
+cd Dataset-Creator-App
+
+# 2. Run the quick-start batch file (handles installation & starting servers)
+start.bat
+```
+> **Tip:** You can also just double-click **`start.bat`** from your File Explorer — no terminal needed!
+
+### macOS / Linux
 ```bash
 # 1. Clone the repository
 git clone https://github.com/amarnath123456789/Dataset-Creator-App.git
 cd Dataset-Creator-App
 
-# 2. Install everything (Python venv + pip + npm — all automated)
-python install.py
-
-# 3. Start the app
-python datasetlab.py start
+# 2. Run the quick-start shell script (handles installation & starting servers)
+bash start.sh
 ```
 
 The app will open automatically at **http://localhost:5173** 🎉
-
-> **Windows users:** You can also just double-click **`start.bat`** — no terminal needed.
 
 ---
 
 ## 🖥️ CLI Reference
 
-```
+If you prefer to run the components manually, you can use the built-in python CLI runner:
+
+```bash
 python datasetlab.py <command>
 ```
 
@@ -62,7 +81,7 @@ python datasetlab.py <command>
 | Disk | 2GB+ for app; 4–10GB per local model |
 | Ollama | Optional — for offline local LLMs — [Download](https://ollama.com/download) |
 
-`install.py` checks all of these for you and will warn you if anything is missing.
+`install.py` checks all of these for you automatically and will warn you if anything is missing.
 
 ---
 
@@ -81,7 +100,7 @@ python datasetlab.py <command>
 
 ## ⚙️ Configuration (Environment Variables)
 
-`install.py` creates the `.env` file for you automatically. You can also create or edit it manually at `dataset-lab/.env`:
+The installer will create a `.env` file for you automatically. You can also edit it manually at `dataset-lab/.env`:
 
 ```env
 # Document Processing
@@ -99,34 +118,34 @@ ANTHROPIC_API_KEY=your_anthropic_api_key_here
 ## 🤖 Using Local LLMs (Ollama)
 
 1. Install Ollama from [ollama.com](https://ollama.com/)
-2. Pull a model:
+2. Pull a model from your terminal:
    ```bash
    ollama run llama3
    ```
-3. Dataset Lab auto-detects Ollama at `http://localhost:11434`.
+3. Dataset Lab auto-detects your local Ollama instance at `http://localhost:11434` automatically!
 
 ---
 
 ## 🏗️ Manual Setup (Advanced)
 
-If you prefer to set up manually without the installer:
+If you prefer to bypass the installer and set up the servers manually:
 
 ```bash
-# Backend
+# Backend Setup
 cd dataset-lab
 python -m venv .venv
 .venv\Scripts\activate        # Windows
 source .venv/bin/activate     # macOS/Linux
 pip install -r backend/requirements.txt
 
-# Frontend
+# Frontend Setup
 cd frontend
 npm install
 
-# Run backend
+# Run backend (Terminal 1)
 python -m backend.main
 
-# Run frontend (new terminal)
+# Run frontend (Terminal 2)
 npm run dev
 ```
 
