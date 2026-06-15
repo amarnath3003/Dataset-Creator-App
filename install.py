@@ -8,10 +8,29 @@ import os
 import sys
 
 # Force UTF-8 encoding for standard output and error to avoid UnicodeEncodeError on Windows
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8', line_buffering=True)
-if hasattr(sys.stderr, 'reconfigure'):
-    sys.stderr.reconfigure(encoding='utf-8', line_buffering=True)
+try:
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8', line_buffering=True)
+    if hasattr(sys.stderr, 'reconfigure'):
+        sys.stderr.reconfigure(encoding='utf-8', line_buffering=True)
+except Exception:
+    pass
+
+import builtins
+_orig_print = builtins.print
+def _safe_print(*args, **kwargs):
+    try:
+        _orig_print(*args, **kwargs)
+    except UnicodeEncodeError:
+        sep = kwargs.get("sep", " ")
+        end = kwargs.get("end", "\n")
+        text = sep.join(map(str, args)) + end
+        text = text.replace('✔', 'OK').replace('✖', 'X').replace('⚠', '!!').replace('▶', '>').replace('●', '*').replace('○', '-').replace('🎉', '***').replace('…', '...')
+        text = text.replace('╔', '+').replace('╗', '+').replace('╚', '+').replace('╝', '+').replace('═', '-').replace('║', '|').replace('─', '-')
+        encoding = getattr(sys.stdout, 'encoding', None) or 'ascii'
+        text = text.encode(encoding, errors='replace').decode(encoding)
+        _orig_print(text, end="")
+print = _safe_print
 
 import subprocess
 import platform
