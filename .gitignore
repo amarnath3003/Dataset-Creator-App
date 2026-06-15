@@ -32,3 +32,4 @@ Thumbs.db
 .mypy_cache/
 .pytest_cache/
 lint_output*.txt
+finetune-lab/plan.md
