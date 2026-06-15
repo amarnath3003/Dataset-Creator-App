@@ -18,23 +18,29 @@ class TrainingCreateRequest(BaseModel):
 def start_training(req: TrainingCreateRequest, background_tasks: BackgroundTasks):
     job_id = str(uuid.uuid4())
     
-    # Map frontend payload to SFTTrainingConfig payload
+    # Map frontend payload to TrainingConfig payload
     job_payload = {
         "run_id": job_id,
+        "training_type": req.training_type,
         "model_name": req.model,
-        "dataset_source": req.dataset_path,
+        "dataset_path": req.dataset_path,
         "output_dir": f"storage/runs/{job_id}",
-        "per_device_train_batch_size": req.config.get("batch_size", 2),
+        "batch_size": req.config.get("batch_size", 2),
         "learning_rate": req.config.get("learning_rate", 2e-4),
-        "num_train_epochs": req.config.get("epochs", 3.0),
+        "epochs": req.config.get("epochs", 3),
         
-        # SFT Defaults
+        # Defaults for other config values
         "max_seq_length": 2048,
         "load_in_4bit": True,
         "lora_rank": 16,
         "lora_alpha": 16,
         "lora_dropout": 0.0,
-        "gradient_accumulation_steps": 4,
+        "gradient_accumulation": 4,
+        "multi_gpu": False,
+        "num_gpus": 1,
+        "export_gguf": False,
+        "quantize": False,
+        "push_to_hub": False
     }
     
     # Initialize in job store
