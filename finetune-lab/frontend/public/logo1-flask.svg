@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="flaskGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3B82F6"/>
+      <stop offset="100%" stop-color="#8B5CF6"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="12" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="100" fill="#0F172A" />
+  
+  <!-- Flask Silhouette -->
+  <path d="M 216 110 L 296 110 L 296 230 L 396 360 A 40 40 0 0 1 366 420 L 146 420 A 40 40 0 0 1 116 360 L 216 230 Z" 
+        fill="none" stroke="url(#flaskGrad)" stroke-width="28" stroke-linejoin="round" filter="url(#glow)"/>
+  
+  <!-- Data Nodes -->
+  <circle cx="210" cy="340" r="18" fill="#60A5FA" filter="url(#glow)"/>
+  <circle cx="300" cy="360" r="24" fill="#A78BFA" filter="url(#glow)"/>
+  <circle cx="256" cy="270" r="14" fill="#34D399" filter="url(#glow)"/>
+  
+  <!-- Connecting Lines -->
+  <path d="M 210 340 L 256 270 L 300 360" fill="none" stroke="#F8FAFC" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity="0.6"/>
+</svg>

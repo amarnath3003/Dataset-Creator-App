@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="neonD" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06B6D4"/>
+      <stop offset="100%" stop-color="#3B82F6"/>
+    </linearGradient>
+    <linearGradient id="neonL" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F43F5E"/>
+      <stop offset="100%" stop-color="#F97316"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="100" fill="#09090B" />
+  
+  <!-- Letter D -->
+  <path d="M 130 130 L 230 130 C 310 130 360 180 360 256 C 360 332 310 382 230 382 L 130 382 Z" 
+        fill="none" stroke="url(#neonD)" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- Letter L -->
+  <path d="M 240 190 L 240 320 L 370 320" 
+        fill="none" stroke="url(#neonL)" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
