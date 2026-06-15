@@ -40,7 +40,8 @@ class Exporter:
 
         export_type = formats[format].get("type", "jsonl")
         export_ext = "json" if export_type == "json" else "jsonl"
-        export_path = project_path / f"export_{format}.{export_ext}"
+        import uuid
+        export_path = project_path / f"export_{format}_{uuid.uuid4().hex[:8]}.{export_ext}"
 
         with open(export_path, "w", encoding="utf-8") as f:
             if export_type == "json":

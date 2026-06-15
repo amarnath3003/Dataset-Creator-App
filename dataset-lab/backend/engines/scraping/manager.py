@@ -319,6 +319,10 @@ async def process_scrape_task(task_id: str, request: ScrapeRequest):
         job_state["error"] = str(e)
         job_state["logs"].append(f"Error: {e}")
         logger.error(f"Scrape task {task_id} failed: {e}")
+    finally:
+        scraping_flag = get_project_path(request.project_name) / ".scraping"
+        if scraping_flag.exists():
+            scraping_flag.unlink()
 
 
 async def process_refinement_task(task_id: str, request: RefineRequest):
@@ -443,6 +447,10 @@ async def process_refinement_task(task_id: str, request: RefineRequest):
         job_state["error"] = str(e)
         job_state["logs"].append(f"Error during AI refinement: {e}")
         logger.error(f"Refinement task {task_id} failed: {e}")
+    finally:
+        refining_flag = get_project_path(request.project_name) / ".refining"
+        if refining_flag.exists():
+            refining_flag.unlink()
 
 
 class ScrapingManager:
@@ -453,7 +461,22 @@ class ScrapingManager:
     def __init__(self):
         self.active_jobs = active_scraping_jobs
 
+    def _cleanup_old_jobs(self):
+        now = datetime.utcnow()
+        to_delete = []
+        for tid, state in self.active_jobs.items():
+            if state["status"] in ["completed", "failed", "cancelled"]:
+                try:
+                    start_time = datetime.fromisoformat(state["start_time"])
+                    if (now - start_time).total_seconds() > 3600:
+                        to_delete.append(tid)
+                except Exception:
+                    pass
+        for tid in to_delete:
+            del self.active_jobs[tid]
+
     def start_job(self, request: ScrapeRequest) -> str:
+        self._cleanup_old_jobs()
         task_id = str(uuid.uuid4())
         self.active_jobs[task_id] = {
             "status": "queued",
@@ -473,6 +496,7 @@ class ScrapingManager:
         return task_id
 
     def start_refinement_job(self, request: RefineRequest) -> str:
+        self._cleanup_old_jobs()
         task_id = str(uuid.uuid4())
         self.active_jobs[task_id] = {
             "status": "queued",

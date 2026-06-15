@@ -1,13 +1,14 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 from backend.engines.exporter import exporter
 from backend.utils.filesystem import get_project_path
 from fastapi.responses import FileResponse
+import os
 
 router = APIRouter()
 
 
 @router.get("/{project_name}/export")
-def export_dataset(project_name: str, format: str = "alpaca"):
+def export_dataset(project_name: str, background_tasks: BackgroundTasks, format: str = "alpaca"):
     try:
         project_path = get_project_path(project_name)
         export_path = exporter.export(project_path, format)
@@ -20,6 +21,8 @@ def export_dataset(project_name: str, format: str = "alpaca"):
 
         # Determine content type and filename based on actual file path suffix
         is_json = export_path.suffix == ".json"
+
+        background_tasks.add_task(os.remove, export_path)
 
         return FileResponse(
             path=export_path,

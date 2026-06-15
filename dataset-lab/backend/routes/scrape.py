@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import os
@@ -19,6 +19,15 @@ async def start_scraping_job(request: ScrapeRequest):
             detail="Must provide at least one of: urls, query, or category.",
         )
 
+    project_dir = get_project_path(request.project_name)
+    if (project_dir / ".scraping").exists():
+        raise HTTPException(status_code=409, detail="A scraping job is already running for this project.")
+    if (project_dir / ".refining").exists():
+        raise HTTPException(status_code=409, detail="A refinement job is currently running for this project.")
+        
+    project_dir.mkdir(parents=True, exist_ok=True)
+    (project_dir / ".scraping").touch()
+
     task_id = manager.start_job(request)
     return {"message": "Scraping job started successfully.", "task_id": task_id}
 
@@ -28,6 +37,15 @@ async def start_refining_job(request: RefineRequest):
     """
     Start a new background job to refine scraped text using LLMs.
     """
+    project_dir = get_project_path(request.project_name)
+    if (project_dir / ".refining").exists():
+        raise HTTPException(status_code=409, detail="A refinement job is already running for this project.")
+    if (project_dir / ".scraping").exists():
+        raise HTTPException(status_code=409, detail="A scraping job is currently running for this project.")
+        
+    project_dir.mkdir(parents=True, exist_ok=True)
+    (project_dir / ".refining").touch()
+
     task_id = manager.start_refinement_job(request)
     return {"message": "Refinement job started successfully.", "task_id": task_id}
 
@@ -120,19 +138,22 @@ async def get_scrape_preview(project_name: str):
 
 
 @router.get("/download/{project_name}")
-async def download_scrape_data(project_name: str):
+async def download_scrape_data(project_name: str, background_tasks: BackgroundTasks):
     """
     Download the scraped text and images as a ZIP file.
     """
     import zipfile
+    import tempfile
 
     project_dir = get_project_path(project_name)
     scraped_dir = project_dir / "scraped"
-    zip_path = project_dir / "scrape_export.zip"
     raw_file = project_dir / "raw.txt"
 
     if not scraped_dir.exists() and not raw_file.exists():
         raise HTTPException(status_code=404, detail="Scraped data not found")
+
+    fd, zip_path = tempfile.mkstemp(suffix=".zip")
+    os.close(fd)
 
     # Manual zip generation to prevent grabbing other pipeline files (chunks.json, qa.json, error.logs)
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
@@ -145,6 +166,8 @@ async def download_scrape_data(project_name: str):
                     # Create a friendly archive structure like 'images/img.jpg' or 'text/doc.json'
                     arcname = os.path.relpath(file_path, scraped_dir)
                     zipf.write(file_path, arcname=arcname)
+
+    background_tasks.add_task(os.remove, zip_path)
 
     return FileResponse(
         path=zip_path,
