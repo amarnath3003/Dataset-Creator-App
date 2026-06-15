@@ -1,59 +1,179 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useEffect, useMemo } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { createTrainingJob } from "../services/trainingApi";
+import { getModel } from "../services/modelApi";
 import { Button } from "../../../components/Button";
-import { Cpu, Play } from "lucide-react";
+import { Cpu, Play, AlertTriangle, CheckCircle2, Server, Clock } from "lucide-react";
+
+const AVAILABLE_GPUS = [
+  { id: "RTX_3060", name: "RTX 3060", vram: 12, speed: 1 },
+  { id: "RTX_4090", name: "RTX 4090", vram: 24, speed: 3.5 },
+  { id: "A100", name: "NVIDIA A100", vram: 80, speed: 8 },
+  { id: "H100", name: "NVIDIA H100", vram: 80, speed: 12 },
+];
 
 export default function HardwareSelectionPage() {
   const navigate = useNavigate();
-  const [gpu, setGpu] = useState("RTX 3060");
+  const location = useLocation();
+  const { modelId, datasetId, trainingConfig } = location.state || {};
+  
+  const [selectedGpu, setSelectedGpu] = useState(AVAILABLE_GPUS[0]);
+  const [modelData, setModelData] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (modelId) {
+      getModel(modelId).then(data => setModelData(data)).catch(console.error);
+    }
+  }, [modelId]);
+
+  // VRAM & Time Estimation Engine
+  const estimation = useMemo(() => {
+    if (!modelData || !trainingConfig) return { vram: 0, time: "Calculating...", fits: true };
+    
+    // Base VRAM (usually for 4-bit)
+    let estVram = modelData.min_vram;
+
+    // Adjust based on precision/mode
+    if (['sft', 'full', 'cpt', 'vision'].includes(trainingConfig.training_type)) {
+      estVram *= 3.5; // full precision requires much more
+    } else if (trainingConfig.training_type === 'lora') {
+      estVram *= 1.5; // 16-bit lora requires more than 4-bit
+    }
+
+    // Adjust based on batch size and context
+    const batchMultiplier = (trainingConfig.batch_size * trainingConfig.max_seq_length) / 8192;
+    estVram += batchMultiplier;
+
+    // Estimate time (heuristic)
+    const baseHours = 2 * (estVram / 8); 
+    const finalHours = baseHours / selectedGpu.speed;
+    
+    return {
+      vram: parseFloat(estVram.toFixed(1)),
+      time: finalHours < 1 ? `${Math.round(finalHours * 60)} mins` : `${finalHours.toFixed(1)} hours`,
+      fits: estVram <= selectedGpu.vram
+    };
+  }, [modelData, trainingConfig, selectedGpu]);
 
   const launchTraining = async () => {
     setIsSubmitting(true);
     try {
       const job = await createTrainingJob({
-          model: "google/gemma-3-1b",
-          dataset_path: "/datasets/test.jsonl",
-          training_type: "sft",
-          config: {
-              batch_size: 2,
-              learning_rate: 2e-4,
-              epochs: 3
-          }
+          model_name: modelId || "unsloth/Llama-3.2-1B-bnb-4bit", // Fallback
+          dataset_path: datasetId ? `/datasets/${datasetId}.jsonl` : "yahma/alpaca-cleaned",
+          training_type: trainingConfig?.training_type || "qlora",
+          ...trainingConfig
       });
       navigate(`/finetune/runs/${job.job_id}`);
     } catch(err) {
-      console.error(err);
+      console.error("Failed to start training:", err);
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="neu-section max-w-3xl mx-auto">
+    <div className="neu-section max-w-4xl mx-auto">
       <div className="neu-section-header">
         <h2 className="flex items-center gap-2 text-neu-text font-bold">
           <Cpu size={18} className="text-neu-dim" />
-          Hardware Compute
+          Hardware & Execution
         </h2>
         <div className="led led-on"></div>
       </div>
       
       <div className="neu-section-body space-y-8">
-        <p className="text-neu-dim text-sm">Choose the GPU configuration to execute the training run.</p>
+        
+        {/* GPU Selection Grid */}
+        <div className="space-y-4">
+          <h3 className="text-sm font-bold text-neu-text tracking-widest uppercase flex items-center gap-2">
+            <Server size={14} className="text-neu-accent" />
+            Compute Provider
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {AVAILABLE_GPUS.map(gpu => (
+              <div 
+                key={gpu.id}
+                onClick={() => setSelectedGpu(gpu)}
+                className={`relative neu-plate p-4 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all duration-300 ${selectedGpu.id === gpu.id ? 'ring-2 ring-neu-accent shadow-[0_0_15px_rgba(255,107,0,0.2)]' : 'hover:-translate-y-1'}`}
+              >
+                <Cpu size={24} className={selectedGpu.id === gpu.id ? 'text-neu-accent' : 'text-neu-dim'} />
+                <div className="text-center mt-2">
+                  <div className="font-bold text-neu-text text-sm">{gpu.name}</div>
+                  <div className="text-[10px] text-neu-dim font-mono mt-1">{gpu.vram} GB VRAM</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
 
-        <div className="flex flex-col space-y-2">
-          <label className="text-[10px] font-bold text-neu-dim uppercase tracking-widest">GPU Provider</label>
-          <div className="neu-trough">
-            <select
-                value={gpu}
-                onChange={(e)=>setGpu(e.target.value)}
-                className="neu-input bg-transparent shadow-none w-full"
-            >
-                <option>RTX 3060</option>
-                <option>RTX 3070</option>
-                <option>RTX 4090</option>
-            </select>
+        {/* Estimation Engine Panel */}
+        <div className="space-y-4">
+           <h3 className="text-sm font-bold text-neu-text tracking-widest uppercase flex items-center gap-2">
+            <Clock size={14} className="text-neu-accent" />
+            Estimator Analysis
+          </h3>
+          <div className="neu-plate p-6 rounded-2xl">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              
+              {/* Requirements */}
+              <div className="space-y-6">
+                <div>
+                   <div className="text-[10px] text-neu-dim uppercase tracking-widest mb-1">Target Model</div>
+                   <div className="text-lg font-bold text-neu-text">{modelData ? modelData.name : (modelId || "Unknown Model")}</div>
+                </div>
+                <div>
+                   <div className="text-[10px] text-neu-dim uppercase tracking-widest mb-1">Engine Mode</div>
+                   <div className="text-lg font-bold text-neu-text uppercase">{trainingConfig?.training_type || "QLoRA"}</div>
+                </div>
+                <div className="flex gap-4">
+                  <div>
+                    <div className="text-[10px] text-neu-dim uppercase tracking-widest mb-1">Batch / Seq</div>
+                    <div className="font-bold text-neu-text">{trainingConfig?.batch_size || 2} / {trainingConfig?.max_seq_length || 2048}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-neu-dim uppercase tracking-widest mb-1">Est. Time</div>
+                    <div className="font-bold text-neu-text">{estimation.time}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* VRAM Gauge */}
+              <div className="flex flex-col items-center justify-center p-6 border-l border-white/5">
+                <div className="relative flex items-center justify-center w-32 h-32">
+                   <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                     <circle cx="50" cy="50" r="40" fill="transparent" stroke="rgba(255,255,255,0.05)" strokeWidth="8" />
+                     <circle 
+                       cx="50" cy="50" r="40" fill="transparent" 
+                       stroke={estimation.fits ? "#FF6B00" : "#EF4444"} 
+                       strokeWidth="8" 
+                       strokeDasharray={`${Math.min((estimation.vram / selectedGpu.vram) * 251, 251)} 251`}
+                       className="transition-all duration-1000 ease-out"
+                     />
+                   </svg>
+                   <div className="absolute flex flex-col items-center">
+                     <span className={`text-2xl font-bold ${!estimation.fits && 'text-red-500'}`}>{estimation.vram}</span>
+                     <span className="text-[10px] text-neu-dim">GB VRAM</span>
+                   </div>
+                </div>
+                
+                <div className="mt-6 text-center">
+                  {estimation.fits ? (
+                    <div className="flex items-center gap-2 text-green-500 text-sm font-bold">
+                      <CheckCircle2 size={16} /> Compute Sufficient
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-red-500 text-sm font-bold">
+                      <AlertTriangle size={16} /> Out of Memory (OOM) Risk
+                    </div>
+                  )}
+                  <div className="text-[10px] text-neu-dim mt-2 max-w-[200px]">
+                    Selected {selectedGpu.name} provides {selectedGpu.vram} GB. {estimation.fits ? "You have headroom." : "Reduce batch size, sequence length, or use QLoRA."}
+                  </div>
+                </div>
+              </div>
+
+            </div>
           </div>
         </div>
 
@@ -64,11 +184,11 @@ export default function HardwareSelectionPage() {
           
           <button 
             onClick={launchTraining} 
-            disabled={isSubmitting}
-            className={`neu-btn-primary px-8 py-3 flex items-center gap-2 font-bold uppercase tracking-widest text-sm rounded-[24px] ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+            disabled={isSubmitting || !estimation.fits}
+            className={`neu-btn-primary px-8 py-3 flex items-center gap-2 font-bold uppercase tracking-widest text-sm rounded-[24px] ${(isSubmitting || !estimation.fits) ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             <Play size={16} fill="currentColor" />
-            {isSubmitting ? 'Starting...' : 'Launch Training'}
+            {isSubmitting ? 'Initializing Job...' : 'Launch Training Run'}
           </button>
         </div>
       </div>

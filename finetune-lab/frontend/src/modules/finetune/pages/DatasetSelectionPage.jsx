@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '../../../components/Button';
 import { Database, Upload, Check } from 'lucide-react';
 
 export default function DatasetSelectionPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [selectedDataset, setSelectedDataset] = useState(null);
 
   // Mock datasets, in a real app these would be fetched from the backend/projects
@@ -75,7 +76,7 @@ export default function DatasetSelectionPage() {
             Back
           </Button>
           <Button 
-            onClick={() => navigate('/finetune/config')} 
+            onClick={() => navigate('/finetune/config', { state: { ...location.state, datasetId: selectedDataset } })} 
             variant="primary" 
             size="lg"
             disabled={!selectedDataset}
