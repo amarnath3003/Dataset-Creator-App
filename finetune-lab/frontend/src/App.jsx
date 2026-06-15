@@ -3,6 +3,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import ModelSelectionPage from './modules/finetune/pages/ModelSelectionPage';
 import DatasetSelectionPage from './modules/finetune/pages/DatasetSelectionPage';
 import TrainingConfigPage from './modules/finetune/pages/TrainingConfigPage';
+import HardwareSelectionPage from './modules/finetune/pages/HardwareSelectionPage';
+import RunDashboard from './modules/finetune/pages/RunDashboard';
 import Navbar from './components/Navbar';
 import { ToastProvider } from './components/Toast';
 import './index.css';
@@ -22,6 +24,8 @@ function App() {
                 <Route path="/finetune/models" element={<ModelSelectionPage />} />
                 <Route path="/finetune/datasets" element={<DatasetSelectionPage />} />
                 <Route path="/finetune/config" element={<TrainingConfigPage />} />
+                <Route path="/finetune/hardware" element={<HardwareSelectionPage />} />
+                <Route path="/finetune/runs/:id" element={<RunDashboard />} />
               </Routes>
             </main>
           </div>

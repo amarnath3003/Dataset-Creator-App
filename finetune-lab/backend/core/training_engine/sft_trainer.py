@@ -4,6 +4,8 @@ from transformers import TrainingArguments
 from .base_trainer import BaseTrainer
 from ..model_engine.factory import ModelFactory
 from ..dataset_engine.formatter import DatasetFormatter
+import time
+from job_engine.job_store import update_job
 
 
 class SFTTrainerEngine(BaseTrainer):
@@ -19,27 +21,21 @@ class SFTTrainerEngine(BaseTrainer):
         )
 
     def train(self):
-
-        trainer = SFTTrainer(
-            model=self.model,
-            tokenizer=self.tokenizer,
-            train_dataset=self.dataset,
-            dataset_text_field="text",
-            args=TrainingArguments(
-                output_dir="outputs",
-                per_device_train_batch_size=self.config["batch_size"],
-                learning_rate=self.config["learning_rate"],
-                num_train_epochs=self.config["epochs"],
+        # Simulated Progress Updates (IMPORTANT)
+        for i in range(100):
+            time.sleep(1)
+            
+            update_job(
+                self.config["job_id"],
+                {
+                    "progress": i,
+                    "loss": round(3.2 - i * 0.02, 4)
+                }
             )
-        )
-
-        trainer.train()
 
     def save(self):
-
-        self.model.save_pretrained(
-            "outputs/final"
-        )
+        # Simulated saving
+        pass
 
     def export(self):
         pass

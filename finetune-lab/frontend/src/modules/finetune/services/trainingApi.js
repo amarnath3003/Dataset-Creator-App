@@ -10,3 +10,11 @@ export const createTrainingJob = async (data) => {
 
   return response.data;
 };
+
+export const getTrainingStatus = async (jobId) => {
+  const response = await axios.get(
+    `${API}/training/status/${jobId}`
+  );
+  
+  return response.data;
+};

@@ -1,8 +1,9 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "../../../components/Button";
 
 export default function TrainingConfigPage() {
-
+  const navigate = useNavigate();
   const [config, setConfig] = useState({
     batch_size: 2,
     learning_rate: 2e-4,
@@ -53,8 +54,8 @@ export default function TrainingConfigPage() {
         <Button onClick={() => window.history.back()} variant="outline" size="lg">
           Back
         </Button>
-        <Button variant="primary" size="lg">
-          Launch Training
+        <Button onClick={() => navigate("/finetune/hardware")} variant="primary" size="lg">
+          Next: Hardware
         </Button>
       </div>
     </div>
