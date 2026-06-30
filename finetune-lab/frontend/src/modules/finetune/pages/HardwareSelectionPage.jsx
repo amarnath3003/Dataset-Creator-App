@@ -34,15 +34,20 @@ export default function HardwareSelectionPage() {
   const estimation = useMemo(() => {
     if (!modelData || !trainingConfig) return { vram: 0, time: "Calculating...", fits: true };
     
-    // Base VRAM (usually for 4-bit)
+    // Base VRAM is the registry's 4-bit minimum; scale by method/precision.
     let estVram = modelData.min_vram;
 
-    // Adjust based on precision/mode
-    if (['sft', 'full', 'cpt', 'vision'].includes(trainingConfig.training_type)) {
-      estVram *= 3.5; // full precision requires much more
-    } else if (trainingConfig.training_type === 'lora') {
-      estVram *= 1.5; // 16-bit lora requires more than 4-bit
-    }
+    // QLoRA & SFT load the 4-bit base (≈ baseline). LoRA loads the 16-bit base.
+    // Full/CPT/Vision are heavier (not yet implemented, shown for guidance).
+    const MODE_MULTIPLIER = {
+      qlora: 1.0,
+      sft: 1.0,
+      lora: 2.0,
+      cpt: 1.3,
+      vision: 2.5,
+      full: 4.0,
+    };
+    estVram *= MODE_MULTIPLIER[trainingConfig.training_type] ?? 1.0;
 
     // Adjust based on batch size and context
     const batchMultiplier = (trainingConfig.batch_size * trainingConfig.max_seq_length) / 8192;

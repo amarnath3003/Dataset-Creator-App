@@ -1,13 +1,20 @@
 # Finetune Lab — Build Roadmap
 
-> **Update 2026-06-30 — Phase 0 + Phase 1 (SFT slice) implemented.** The four blocking
+> **Update 2026-06-30 — Phase 0 + 1 (SFT) + 4 (LoRA/QLoRA) implemented.** The four blocking
 > bugs are fixed, the canonical `UnslothSFTRunner` is wired through the live path, the wizard
 > submits a real `TrainingRequest`, datasets upload for real, and RunDashboard shows true
-> step-based progress / loss / VRAM / ETA / streaming logs. Verified off-GPU: torch-free API
-> boot, correct route table (no double prefix), event→record translation (real progress),
-> dataset format detection. **Remaining: validate an actual GPU run** on a machine with the
-> ML stack (torch/unsloth/trl) installed. Methods `sft`/`lora`/`qlora` run through the runner;
+> step-based progress / loss / VRAM / ETA / streaming logs. **LoRA vs QLoRA are now distinct:**
+> quantization is derived from the mode (QLoRA/SFT → 4-bit, LoRA → 16-bit with the matching
+> non-`bnb-4bit` checkpoint), LoftQ is wired (4-bit only, graceful fallback), and the adapter
+> config (rank/alpha/dropout/rsLoRA/LoftQ) flows end-to-end. Verified off-GPU: torch-free API
+> boot, route table (no double prefix), event→record translation (real progress), dataset
+> format detection, quantization/model-id resolution, adapter-config log rendering.
+> **Remaining: validate an actual GPU run** on a machine with the ML stack (torch/unsloth/trl).
 > `full`/`cpt`/`vision` are recognised and cleanly reported as not-yet-implemented.
+>
+> **Design principle (per user):** every setting must be user-tunable from the frontend over
+> time. The seam is the free-form `hyperparameters` dict — see the Hyperparameter Contract
+> appendix; new UI controls flow to the engine with **no backend change**.
 
 > Status: **early skeleton.** The wizard UI, model registry, and a strong (but orphaned)
 > SFT engine exist. The end-to-end path from "click Start" to "model trained" is **not yet
@@ -259,6 +266,43 @@ saved adapter on disk. This is the spine every later method reuses.*
 - **Safety rails**: VRAM pre-flight, dataset schema validation, disk-space check before save.
 - **Design system**: all new UI uses the neumorphic kit in `skill.md`.
 - **No secrets in logs**: HF tokens redacted in events/manifest.
+
+---
+
+## Appendix — Hyperparameter Contract (full tunability seam)
+
+The API accepts `TrainingRequest.hyperparameters` as a free-form dict. The worker
+(`gpu_worker._build_sft_config`) reads each key below into the engine, so the **frontend can
+expose any of these incrementally with no backend change**. "UI" = already has a control.
+
+| Key | Type | Default | UI? | Notes |
+|-----|------|---------|-----|-------|
+| `epochs` | float | 3 | ✅ | `num_train_epochs` |
+| `max_steps` | int | -1 | — | overrides epochs when > 0 |
+| `learning_rate` | float | 2e-4 | ✅ | |
+| `batch_size` | int | 2 | ✅ | per-device micro-batch |
+| `gradient_accumulation` | int | 4 | ✅ | |
+| `max_seq_length` | int | 2048 | ✅ | |
+| `packing` | bool | false | ✅ | sequence packing |
+| `save_steps` | int | 200 | ✅ | |
+| `warmup_ratio` | float | 0.03 | — | |
+| `weight_decay` | float | 0.0 | — | |
+| `lr_scheduler_type` | str | cosine | — | linear/cosine/… |
+| `optim` | str | paged_adamw_8bit | — | |
+| `seed` | int | 3407 | — | |
+| `lora_rank` | int | 16 | ✅ | |
+| `lora_alpha` | int | 16 | ✅ | |
+| `lora_dropout` | float | 0.0 | ✅ | |
+| `use_rslora` | bool | false | ✅ | rank-stabilized LoRA |
+| `use_loftq` | bool | false | ✅ | 4-bit only; graceful fallback |
+| `target_modules` | list | unsloth default 7 | — | advanced |
+| `bias` | str | none | — | advanced |
+| `load_in_4bit` | bool | derived from mode | — | explicit override wins |
+| `dtype` | str | auto | — | bf16/fp16/fp32 |
+
+Quantization is otherwise derived from `training_type`: **QLoRA/SFT → 4-bit**, **LoRA → 16-bit**
+(loads the matching non-`bnb-4bit` checkpoint). When adding "Full tunability" UI, add controls
+that write these keys into the wizard's `trainingConfig`; they arrive as `hyperparameters`.
 
 ---
 

@@ -46,11 +46,11 @@ export default function TrainingConfigPage() {
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             {[
-              { id: 'qlora', label: 'QLoRA', desc: 'Memory efficient 4-bit' },
-              { id: 'lora', label: 'LoRA', desc: 'Standard adapter' },
-              { id: 'sft', label: 'SFT', desc: 'Supervised Fine-Tuning' },
-              { id: 'full', label: 'Full', desc: 'All parameters (High VRAM)' },
-              { id: 'cpt', label: 'CPT', desc: 'Continued Pre-Training' },
+              { id: 'qlora', label: 'QLoRA', desc: '4-bit base + LoRA · lowest VRAM' },
+              { id: 'lora', label: 'LoRA', desc: '16-bit base + LoRA · higher quality' },
+              { id: 'sft', label: 'SFT', desc: 'Supervised tuning (4-bit LoRA)' },
+              { id: 'full', label: 'Full', desc: 'All parameters (high VRAM)' },
+              { id: 'cpt', label: 'CPT', desc: 'Continued pre-training' },
               { id: 'vision', label: 'Vision', desc: 'Multimodal VLM' }
             ].map(mode => (
               <button
@@ -67,6 +67,18 @@ export default function TrainingConfigPage() {
               </button>
             ))}
           </div>
+
+          {['sft', 'lora', 'qlora'].includes(config.training_type) && (
+            <p className="text-[11px] font-mono text-neu-dim">
+              Base precision:{' '}
+              <span className="text-neu-accent">
+                {config.training_type === 'lora' ? '16-bit' : '4-bit'}
+              </span>
+              {config.training_type === 'lora'
+                ? ' — loads the full-precision checkpoint (more VRAM, higher fidelity).'
+                : ' — quantized base (lowest VRAM).'}
+            </p>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -166,7 +178,7 @@ export default function TrainingConfigPage() {
               <Sliders size={14} className="text-neu-accent" />
               Adapter Configuration
             </h3>
-            <div className={`neu-plate p-6 rounded-2xl space-y-6 transition-opacity duration-300 ${['lora', 'qlora'].includes(config.training_type) ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+            <div className={`neu-plate p-6 rounded-2xl space-y-6 transition-opacity duration-300 ${['sft', 'lora', 'qlora'].includes(config.training_type) ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
               
               <div className="flex flex-col space-y-2">
                 <label className="text-[10px] font-bold text-neu-dim uppercase tracking-widest flex justify-between">
@@ -221,12 +233,12 @@ export default function TrainingConfigPage() {
                   </button>
                 </div>
 
-                <div className="flex items-center justify-between">
+                <div className={`flex items-center justify-between transition-opacity ${['qlora', 'sft'].includes(config.training_type) ? '' : 'opacity-40 pointer-events-none'}`}>
                   <div>
                     <label className="text-sm font-bold text-neu-text">LoftQ Initialization</label>
-                    <p className="text-[10px] text-neu-dim mt-1">Improves QLoRA accuracy</p>
+                    <p className="text-[10px] text-neu-dim mt-1">Improves QLoRA accuracy (4-bit only)</p>
                   </div>
-                  <button 
+                  <button
                     onClick={() => handleUpdate('use_loftq', !config.use_loftq)}
                     className={`w-12 h-6 rounded-full p-1 transition-colors ${config.use_loftq ? 'bg-neu-accent' : 'bg-neu-dark'}`}
                   >
