@@ -454,6 +454,14 @@ class UnslothSFTRunner:
         bf16 = bool(torch.cuda.is_available() and torch.cuda.is_bf16_supported())
         fp16 = bool(torch.cuda.is_available() and not bf16)
 
+        # CPT: train embeddings/lm_head with a separate (lower) LR via Unsloth's
+        # trainer. Best-effort — falls back to the standard SFT path (single LR,
+        # embeddings still trained because they are in target_modules).
+        if cfg.embedding_learning_rate is not None:
+            cpt_trainer = self._try_build_cpt_trainer(cfg, model, tokenizer, train_dataset, bf16, fp16)
+            if cpt_trainer is not None:
+                return cpt_trainer
+
         common_kwargs: dict[str, Any] = dict(
             output_dir=str(self.output_dir),
             num_train_epochs=cfg.num_train_epochs,
@@ -515,6 +523,62 @@ class UnslothSFTRunner:
             )
 
         return trainer
+
+    def _try_build_cpt_trainer(self, cfg, model, tokenizer, train_dataset, bf16, fp16):
+        """Build an Unsloth CPT trainer with a separate embedding LR.
+
+        Returns the trainer, or None to signal the caller to fall back to the
+        standard SFT trainer (e.g. if this Unsloth build lacks the CPT trainer).
+        """
+        try:
+            from unsloth import UnslothTrainer, UnslothTrainingArguments
+        except Exception as exc:  # noqa: BLE001
+            self._emit({"type": "warning", "run_id": cfg.run_id,
+                        "message": f"Unsloth CPT trainer unavailable ({exc}); "
+                                   "using single learning rate."})
+            return None
+
+        try:
+            args = UnslothTrainingArguments(
+                output_dir=str(self.output_dir),
+                num_train_epochs=cfg.num_train_epochs,
+                max_steps=cfg.max_steps,
+                per_device_train_batch_size=cfg.per_device_train_batch_size,
+                gradient_accumulation_steps=cfg.gradient_accumulation_steps,
+                learning_rate=cfg.learning_rate,
+                embedding_learning_rate=cfg.embedding_learning_rate,
+                warmup_ratio=cfg.warmup_ratio,
+                weight_decay=cfg.weight_decay,
+                lr_scheduler_type=cfg.lr_scheduler_type,
+                optim=cfg.optim,
+                seed=cfg.seed,
+                bf16=bf16,
+                fp16=fp16,
+                logging_steps=cfg.logging_steps,
+                save_strategy=cfg.save_strategy,
+                save_steps=cfg.save_steps,
+                save_total_limit=cfg.save_total_limit,
+                report_to=cfg.report_to,
+            )
+            callback = StreamingMetricsCallback(self.sink, cfg.run_id)
+            trainer = UnslothTrainer(
+                model=model,
+                tokenizer=tokenizer,
+                train_dataset=train_dataset,
+                dataset_text_field=cfg.dataset_text_field,
+                max_seq_length=cfg.max_seq_length,
+                packing=cfg.packing,
+                args=args,
+                callbacks=[callback],
+            )
+            self._emit({"type": "cpt_trainer", "run_id": cfg.run_id,
+                        "embedding_learning_rate": cfg.embedding_learning_rate})
+            return trainer
+        except Exception as exc:  # noqa: BLE001
+            self._emit({"type": "warning", "run_id": cfg.run_id,
+                        "message": f"CPT trainer init failed ({exc}); "
+                                   "falling back to single learning rate."})
+            return None
 
     def _save_artifacts(self, trainer: SFTTrainer, tokenizer, cfg: SFTTrainingConfig) -> Path:
         final_dir = self.output_dir / "final"

@@ -70,11 +70,16 @@ class JobStoreSink:
                 extras.append("rsLoRA")
             if event.get("loftq"):
                 extras.append("LoftQ")
+            if event.get("train_embeddings"):
+                extras.append("+embeddings")
             suffix = f" [{', '.join(extras)}]" if extras else ""
             log(
                 f"> Adapters: LoRA r={event.get('lora_rank')} alpha={event.get('lora_alpha')} "
                 f"dropout={event.get('lora_dropout')} | {quant}{suffix}"
             )
+
+        elif etype == "cpt_trainer":
+            log(f"> CPT: training embeddings with separate LR = {event.get('embedding_learning_rate')}")
 
         elif etype == "warning":
             log(f"! {event.get('message')}")

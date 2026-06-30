@@ -18,7 +18,8 @@ logger = logging.getLogger(__name__)
 
 # Methods that route through the supervised LoRA/SFT runner.
 _SFT_FAMILY = {"sft", "lora", "qlora"}
-_NOT_YET = {"full", "cpt", "vision"}
+_CPT = "cpt"
+_NOT_YET = {"full", "vision"}
 
 _BNB_4BIT_SUFFIX = "-bnb-4bit"
 
@@ -47,16 +48,19 @@ def resolve_model_name(model_name: str, load_in_4bit: bool) -> str:
     return model_name
 
 
-def _build_sft_config(payload: dict[str, Any]):
+def _build_config(payload: dict[str, Any]):
     """Translate the API job payload into the runner's SFTTrainingConfig.
 
-    Every value is read from the free-form ``hyperparameters`` dict so new
-    frontend controls flow through without backend changes.
+    Covers SFT / LoRA / QLoRA and CPT (continued pre-training). Every value is
+    read from the free-form ``hyperparameters`` dict so new frontend controls
+    flow through without backend changes. CPT supplies raw-text-friendly
+    defaults (1 epoch, lower LR, packing on, embeddings trained).
     """
-    from training.unsloth_sft_runner import SFTTrainingConfig
+    from training.sft_config import SFTTrainingConfig
 
     hp = payload.get("hyperparameters") or {}
     training_type = (payload.get("training_type") or "sft").lower()
+    is_cpt = training_type == _CPT
 
     def num(key, default):
         val = hp.get(key, default)
@@ -74,7 +78,9 @@ def _build_sft_config(payload: dict[str, Any]):
     if hp.get("dtype") is not None:
         optional["dtype"] = str(hp["dtype"])
 
-    return SFTTrainingConfig(
+    learning_rate = float(num("learning_rate", 5e-5 if is_cpt else 2e-4))
+
+    cfg_kwargs = dict(
         run_id=payload["run_id"],
         model_name=model_name,
         output_dir=payload["output_dir"],
@@ -90,21 +96,33 @@ def _build_sft_config(payload: dict[str, Any]):
         use_rslora=bool(num("use_rslora", False)),
         use_loftq=bool(num("use_loftq", False)) and load_in_4bit,
         # training
-        num_train_epochs=float(num("epochs", 3)),
+        num_train_epochs=float(num("epochs", 1 if is_cpt else 3)),
         max_steps=int(num("max_steps", -1)),
         per_device_train_batch_size=int(num("batch_size", 2)),
         gradient_accumulation_steps=int(num("gradient_accumulation", 4)),
-        learning_rate=float(num("learning_rate", 2e-4)),
+        learning_rate=learning_rate,
         warmup_ratio=float(num("warmup_ratio", 0.03)),
-        weight_decay=float(num("weight_decay", 0.0)),
-        lr_scheduler_type=str(num("lr_scheduler_type", "cosine")),
+        weight_decay=float(num("weight_decay", 0.01 if is_cpt else 0.0)),
+        lr_scheduler_type=str(num("lr_scheduler_type", "linear" if is_cpt else "cosine")),
         optim=str(num("optim", "paged_adamw_8bit")),
         seed=int(num("seed", 3407)),
-        packing=bool(num("packing", False)),
+        packing=bool(num("packing", True if is_cpt else False)),
         # save
         save_steps=int(num("save_steps", 200)),
         **optional,
     )
+
+    if is_cpt:
+        emb_lr = hp.get("embedding_learning_rate")
+        try:
+            emb_lr_val = float(emb_lr) if emb_lr not in (None, "") else learning_rate / 10.0
+        except (TypeError, ValueError):
+            emb_lr_val = learning_rate / 10.0
+        cfg_kwargs["train_embeddings"] = bool(num("train_embeddings", True))
+        cfg_kwargs["embedding_learning_rate"] = emb_lr_val
+        cfg_kwargs["append_eos"] = bool(num("append_eos", True))
+
+    return SFTTrainingConfig(**cfg_kwargs)
 
 
 def run_training_job(payload: dict[str, Any]) -> dict[str, Any]:
@@ -118,14 +136,14 @@ def run_training_job(payload: dict[str, Any]) -> dict[str, Any]:
         if training_type in _NOT_YET:
             raise NotImplementedError(
                 f"Training type '{training_type}' is not implemented yet. "
-                f"Available now: SFT, LoRA, QLoRA."
+                f"Available now: SFT, LoRA, QLoRA, CPT."
             )
-        if training_type not in _SFT_FAMILY:
+        if training_type not in _SFT_FAMILY and training_type != _CPT:
             raise ValueError(f"Unknown training type '{training_type}'.")
 
         from training.unsloth_sft_runner import UnslothSFTRunner
 
-        cfg = _build_sft_config(payload)
+        cfg = _build_config(payload)
         runner = UnslothSFTRunner(cfg, sink)
         result = runner.run()  # emits job_succeeded / job_failed itself
         return {"run_id": run_id, "status": result.status}

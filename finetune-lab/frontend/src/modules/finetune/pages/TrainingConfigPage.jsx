@@ -19,7 +19,10 @@ export default function TrainingConfigPage() {
     lora_dropout: 0.05,
     use_rslora: false,
     use_loftq: false,
-    packing: false
+    packing: false,
+    // CPT (continued pre-training)
+    train_embeddings: true,
+    embedding_learning_rate: 0.000005,
   });
 
   const handleUpdate = (field, value) => {
@@ -160,13 +163,45 @@ export default function TrainingConfigPage() {
                     <label className="text-sm font-bold text-neu-text">Sequence Packing</label>
                     <p className="text-[10px] text-neu-dim mt-1">Accelerates training for short sequences (5x speedup)</p>
                   </div>
-                  <button 
+                  <button
                     onClick={() => handleUpdate('packing', !config.packing)}
                     className={`w-12 h-6 rounded-full p-1 transition-colors ${config.packing ? 'bg-neu-accent' : 'bg-neu-dark'}`}
                   >
                     <div className={`bg-white w-4 h-4 rounded-full transition-transform ${config.packing ? 'translate-x-6' : 'translate-x-0'}`}></div>
                   </button>
                 </div>
+
+                {config.training_type === 'cpt' && (
+                  <>
+                    <div className="flex items-center justify-between pt-4 border-t border-white/5">
+                      <div>
+                        <label className="text-sm font-bold text-neu-text">Train Embeddings</label>
+                        <p className="text-[10px] text-neu-dim mt-1">Also tune embed_tokens + lm_head for new domain vocabulary</p>
+                      </div>
+                      <button
+                        onClick={() => handleUpdate('train_embeddings', !config.train_embeddings)}
+                        className={`w-12 h-6 rounded-full p-1 transition-colors ${config.train_embeddings ? 'bg-neu-accent' : 'bg-neu-dark'}`}
+                      >
+                        <div className={`bg-white w-4 h-4 rounded-full transition-transform ${config.train_embeddings ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                      </button>
+                    </div>
+
+                    <div className={`flex flex-col space-y-2 transition-opacity ${config.train_embeddings ? '' : 'opacity-40 pointer-events-none'}`}>
+                      <label className="text-[10px] font-bold text-neu-dim uppercase tracking-widest">Embedding Learning Rate</label>
+                      <div className="neu-trough">
+                        <input
+                          type="number" step="0.000001" min="0" value={config.embedding_learning_rate}
+                          onChange={(e) => handleUpdate('embedding_learning_rate', Number(e.target.value))}
+                          className="neu-input bg-transparent shadow-none"
+                        />
+                      </div>
+                    </div>
+
+                    <p className="text-[10px] text-neu-dim">
+                      CPT trains on a raw-text corpus (a <span className="font-mono text-neu-dim">text</span> column). Use domain documents, not Q&amp;A pairs.
+                    </p>
+                  </>
+                )}
               </div>
             </div>
 
@@ -178,7 +213,7 @@ export default function TrainingConfigPage() {
               <Sliders size={14} className="text-neu-accent" />
               Adapter Configuration
             </h3>
-            <div className={`neu-plate p-6 rounded-2xl space-y-6 transition-opacity duration-300 ${['sft', 'lora', 'qlora'].includes(config.training_type) ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+            <div className={`neu-plate p-6 rounded-2xl space-y-6 transition-opacity duration-300 ${['sft', 'lora', 'qlora', 'cpt'].includes(config.training_type) ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
               
               <div className="flex flex-col space-y-2">
                 <label className="text-[10px] font-bold text-neu-dim uppercase tracking-widest flex justify-between">
