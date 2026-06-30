@@ -82,6 +82,12 @@ export default function TrainingConfigPage() {
                 : ' — quantized base (lowest VRAM).'}
             </p>
           )}
+
+          {config.training_type === 'full' && (
+            <p className="text-[11px] font-mono text-neu-dim">
+              Base precision: <span className="text-neu-accent">16-bit</span> — full-parameter fine-tuning (no LoRA adapters). Highest quality and highest VRAM; use a small model or multiple GPUs.
+            </p>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">

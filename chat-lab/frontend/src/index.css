@@ -1,0 +1,586 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* ══════════════════════════════════════════════════════
+     * 🌑  DARK SKEUOMORPHIC — "CONTROL CONSOLE" SYSTEM
+     * Light source: always top-left (↖)
+     * ══════════════════════════════════════════════════════ */
+
+    /* Surfaces ------------------------------------------------ */
+    --bg-base: #212529;
+    /* Primary surface */
+    --bg-dark: #1a1d21;
+    /* Deeper recess */
+    --bg-card: #23272b;
+    /* Slightly warmer for cards */
+
+    /* Text ---------------------------------------------------- */
+    --text-main: #d8dde6;
+    --text-dim: #6b7280;
+    --text-muted: #4b5563;
+
+    /* 🟠 Orange Accent ---------------------------------------- */
+    --accent: #ff6b00;
+    --accent-light: #ff8533;
+    --accent-glow: rgba(255, 107, 0, 0.35);
+    --accent-glow-sm: rgba(255, 107, 0, 0.2);
+
+    /* Shadow Physics (dark neu needs true black shadows) ------- */
+    --sh-flat: 8px 8px 18px #141619, -8px -8px 18px #2e343b;
+    --sh-hover: 12px 12px 24px #141619, -12px -12px 24px #2e343b;
+    --sh-press: inset 5px 5px 10px #141619, inset -5px -5px 10px #2e343b;
+    --sh-trough: inset 4px 4px 8px #111315, inset -4px -4px 8px #2c323a;
+    --sh-deep: inset 6px 6px 14px #0d0f11, inset -6px -6px 14px #2e343b;
+
+    /* Glow ---------------------------------------------------- */
+    --glow: 0 0 14px var(--accent-glow);
+    --glow-sm: 0 0 8px var(--accent-glow-sm);
+    --glow-green: 0 0 10px rgba(34, 197, 94, 0.4);
+    --glow-red: 0 0 10px rgba(239, 68, 68, 0.4);
+  }
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background: var(--bg-base);
+    color: var(--text-main);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+    min-height: 100vh;
+  }
+
+  /* ── Scrollbars ─────────────────────────────────────────── */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--bg-dark);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #363b44;
+    border-radius: 99px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #4a505a;
+  }
+
+  /* ── Selection ──────────────────────────────────────────── */
+  ::selection {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  /* ── Remove default input chrome ───────────────────────── */
+  input,
+  textarea,
+  select,
+  button {
+    font-family: inherit;
+  }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+}
+
+@layer components {
+  /* ══════════════════════════════════════════════════════════
+   *  SURFACE CLASSES
+   * ══════════════════════════════════════════════════════════ */
+
+  /* The go-to molded surface */
+  .neu-plate {
+    background: var(--bg-base);
+    box-shadow: var(--sh-flat);
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.03);
+    transition: box-shadow 0.3s cubic-bezier(.4, 0, .2, 1),
+      transform 0.3s cubic-bezier(.4, 0, .2, 1);
+  }
+
+  .neu-plate:hover {
+    box-shadow: var(--sh-hover);
+    transform: translateY(-2px);
+  }
+
+  /* Recessed / inset */
+  .neu-inset {
+    background: var(--bg-base);
+    box-shadow: var(--sh-press);
+    border-radius: 16px;
+  }
+
+  /* Deep trough — inputs, textareas, progress tracks */
+  .neu-trough {
+    background: var(--bg-dark);
+    box-shadow: var(--sh-trough);
+    border-radius: 12px;
+    border: 1px solid rgba(0, 0, 0, 0.3);
+  }
+
+  /* Very deep recesses — code blocks, terminals */
+  .neu-deep {
+    background: #111315;
+    box-shadow: var(--sh-deep);
+    border-radius: 14px;
+    border: 1px solid rgba(0, 0, 0, 0.5);
+  }
+
+  /* ══════════════════════════════════════════════════════════
+   *  INTERACTIVE ELEMENTS
+   * ══════════════════════════════════════════════════════════ */
+
+  /* Base button */
+  .neu-btn {
+    background: var(--bg-base);
+    box-shadow: var(--sh-flat);
+    border-radius: 99px;
+    color: var(--text-dim);
+    font-weight: 500;
+    border: 1px solid rgba(255, 255, 255, 0.02);
+    transition: all 0.2s cubic-bezier(.4, 0, .2, 1);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .neu-btn:hover {
+    color: var(--text-main);
+    box-shadow: var(--sh-hover);
+    transform: translateY(-2px);
+  }
+
+  .neu-btn:active {
+    box-shadow: var(--sh-press);
+    transform: translateY(1px);
+    color: var(--accent);
+  }
+
+  /* Primary orange variant */
+  .neu-btn-primary {
+    color: var(--accent);
+    text-shadow: 0 0 12px var(--accent-glow-sm);
+  }
+
+  .neu-btn-primary:hover {
+    box-shadow: var(--sh-hover), var(--glow);
+  }
+
+  .neu-btn-primary:active {
+    color: var(--accent-light);
+  }
+
+  /* Small icon-button (for copy, toggle-all etc.) */
+  .neu-btn-sm {
+    background: var(--bg-base);
+    box-shadow: 4px 4px 8px #141619, -4px -4px 8px #2e343b;
+    border-radius: 10px;
+    color: var(--text-dim);
+    border: 1px solid rgba(255, 255, 255, 0.02);
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 6px 10px;
+    font-size: 11px;
+    gap: 4px;
+  }
+
+  .neu-btn-sm:hover {
+    color: var(--accent);
+    box-shadow: 6px 6px 12px #141619, -6px -6px 12px #2e343b;
+  }
+
+  .neu-btn-sm:active {
+    box-shadow: inset 3px 3px 6px #141619, inset -3px -3px 6px #2e343b;
+  }
+
+  /* ── Inputs & Text areas ──────────────────────────────── */
+  .neu-input {
+    background: var(--bg-dark);
+    box-shadow: var(--sh-trough);
+    border-radius: 14px;
+    border: 1px solid transparent;
+    color: var(--text-main);
+    padding: 12px 18px;
+    width: 100%;
+    outline: none;
+    transition: box-shadow 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+    font-size: 0.875rem;
+  }
+
+  .neu-input:focus {
+    box-shadow: var(--sh-press), 0 0 0 1px var(--accent);
+    border-color: var(--accent);
+    color: var(--text-main);
+  }
+
+  .neu-input::placeholder {
+    color: var(--text-muted);
+  }
+
+  .neu-textarea {
+    background: #111315;
+    box-shadow: var(--sh-deep);
+    border-radius: 16px;
+    border: 1px solid rgba(0, 0, 0, 0.5);
+    color: #4ade80;
+    /* Terminal green */
+    padding: 20px 24px;
+    width: 100%;
+    outline: none;
+    resize: vertical;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+    font-size: 0.8rem;
+    line-height: 1.7;
+    transition: box-shadow 0.25s ease, border-color 0.25s ease;
+  }
+
+  .neu-textarea:focus {
+    box-shadow: var(--sh-deep), 0 0 0 1px var(--accent);
+    border-color: rgba(255, 107, 0, 0.4);
+  }
+
+  /* ── Badges / Pills ───────────────────────────────────── */
+  .neu-badge {
+    background: var(--bg-dark);
+    box-shadow: 3px 3px 6px #141619, -3px -3px 6px #2e343b;
+    border-radius: 99px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 3px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    color: var(--text-dim);
+  }
+
+  .neu-badge-accent {
+    color: var(--accent);
+    box-shadow: 3px 3px 6px #141619, -3px -3px 6px #2e343b, var(--glow-sm);
+    border-color: rgba(255, 107, 0, 0.15);
+  }
+
+  .neu-badge-green {
+    color: #4ade80;
+    box-shadow: 3px 3px 6px #141619, -3px -3px 6px #2e343b, 0 0 8px rgba(74, 222, 128, 0.3);
+    border-color: rgba(74, 222, 128, 0.15);
+  }
+
+  .neu-badge-red {
+    color: #f87171;
+    box-shadow: 3px 3px 6px #141619, -3px -3px 6px #2e343b, 0 0 8px rgba(248, 113, 113, 0.3);
+    border-color: rgba(248, 113, 113, 0.15);
+  }
+
+  /* ── Stat Pill ────────────────────────────────────────── */
+  .neu-stat {
+    background: var(--bg-dark);
+    box-shadow: var(--sh-trough);
+    border-radius: 14px;
+    padding: 12px 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.03);
+  }
+
+  .neu-stat-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-main);
+  }
+
+  .neu-stat-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  /* ── Code / Terminal Block ────────────────────────────── */
+  .neu-terminal {
+    background: #0d0f11;
+    box-shadow: var(--sh-deep);
+    border-radius: 14px;
+    border: 1px solid rgba(0, 0, 0, 0.6);
+    color: #4ade80;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.75rem;
+    line-height: 1.6;
+    padding: 16px 20px;
+    overflow: auto;
+    max-height: 320px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* ── Divider ──────────────────────────────────────────── */
+  .neu-divider {
+    height: 1px;
+    background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.05), transparent);
+    border: none;
+    margin: 0;
+  }
+
+  /* ── Progress Bar ─────────────────────────────────────── */
+  .neu-progress-track {
+    background: var(--bg-dark);
+    box-shadow: var(--sh-trough);
+    border-radius: 99px;
+    height: 10px;
+    overflow: hidden;
+  }
+
+  .neu-progress-fill {
+    height: 100%;
+    border-radius: 99px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-light));
+    box-shadow: 0 0 12px var(--accent-glow);
+    transition: width 0.5s cubic-bezier(.4, 0, .2, 1);
+  }
+
+  /* ── LED Indicators ───────────────────────────────────── */
+  .led {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .led-on {
+    background: var(--accent);
+    box-shadow: var(--glow);
+  }
+
+  .led-off {
+    background: #1a1d21;
+    box-shadow: var(--sh-trough);
+  }
+
+  .led-green {
+    background: #22c55e;
+    box-shadow: var(--glow-green);
+  }
+
+  .led-red {
+    background: #ef4444;
+    box-shadow: var(--glow-red);
+  }
+
+  /* ── Section Card ─────────────────────────────────────── */
+  .neu-section {
+    background: var(--bg-base);
+    box-shadow: var(--sh-flat);
+    border-radius: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.03);
+    overflow: hidden;
+    margin-bottom: 24px;
+  }
+
+  .neu-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 24px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  }
+
+  .neu-section-body {
+    padding: 24px;
+  }
+
+  /* ── Chunk / Collapsible Card ─────────────────────────── */
+  .neu-chunk {
+    background: var(--bg-base);
+    box-shadow: 4px 4px 8px #141619, -4px -4px 8px #2e343b;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.03);
+    overflow: hidden;
+    transition: box-shadow 0.2s ease;
+  }
+
+  .neu-chunk-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 18px;
+    cursor: pointer;
+    transition: background 0.2s ease;
+  }
+
+  .neu-chunk-header:hover {
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  /* ── Pipeline Stage Node ──────────────────────────────── */
+  .stage-node {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    transition: all 0.4s ease;
+  }
+
+  .stage-node-done {
+    background: var(--accent);
+    box-shadow: 0 0 16px var(--accent-glow);
+    color: #fff;
+  }
+
+  .stage-node-pending {
+    background: var(--bg-dark);
+    box-shadow: var(--sh-trough);
+    color: var(--text-muted);
+  }
+
+  .stage-connector {
+    flex: 1;
+    height: 3px;
+    border-radius: 99px;
+    margin-bottom: 20px;
+    transition: all 0.4s ease;
+  }
+
+  .stage-connector-done {
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent-glow);
+  }
+
+  .stage-connector-pending {
+    background: var(--bg-dark);
+    box-shadow: var(--sh-trough);
+  }
+
+  /* ── Alert Banner ─────────────────────────────────────── */
+  .neu-alert-warn {
+    background: rgba(255, 180, 0, 0.06);
+    border: 1px solid rgba(255, 180, 0, 0.2);
+    border-radius: 14px;
+    color: #fbbf24;
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.85rem;
+  }
+
+  .neu-alert-info {
+    background: rgba(59, 130, 246, 0.06);
+    border: 1px solid rgba(59, 130, 246, 0.15);
+    border-radius: 14px;
+    color: #60a5fa;
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.85rem;
+  }
+
+  /* ── Range Slider thumb ───────────────────────────────── */
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--bg-base);
+    box-shadow: 5px 5px 10px #141619, -5px -5px 10px #2e343b;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.15);
+    box-shadow: 6px 6px 12px #141619, -6px -6px 12px #2e343b, 0 0 10px var(--accent-glow-sm);
+  }
+
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 0px;
+    background: transparent;
+  }
+
+  /* ── Select Arrow ─────────────────────────────────────── */
+  select.neu-input {
+    background-image: none;
+    cursor: pointer;
+  }
+
+  /* ── Tooltip chip ─────────────────────────────────────── */
+  .neu-chip {
+    background: var(--bg-dark);
+    box-shadow: 3px 3px 6px #141619, -3px -3px 6px #2e343b;
+    border-radius: 99px;
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    color: #60a5fa;
+    padding: 4px 12px;
+    display: inline-block;
+  }
+}
+
+@layer utilities {
+
+  /* Quick glow helpers */
+  .glow-orange {
+    box-shadow: var(--glow);
+  }
+
+  .glow-green {
+    box-shadow: var(--glow-green);
+  }
+
+  /* "active" surface overlay */
+  .surface-active::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(135deg, rgba(255, 107, 0, 0.06) 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  /* Toast Slide-in Animation */
+  .animate-toast-in {
+    animation: toastIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+}
+
+@keyframes toastIn {
+  from {
+    transform: translateX(100%) scale(0.9);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0) scale(1);
+    opacity: 1;
+  }
+}

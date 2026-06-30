@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api import training_routes, model_routes, dataset_routes, export_routes
+from api import training_routes, model_routes, dataset_routes, export_routes, hardware_routes
 
 app = FastAPI(
     title="Finetune Lab API",
@@ -20,6 +20,7 @@ app.include_router(training_routes.router, prefix="/api/training", tags=["Traini
 app.include_router(model_routes.router, prefix="/api/models", tags=["Models"])
 app.include_router(dataset_routes.router, prefix="/api/datasets", tags=["Datasets"])
 app.include_router(export_routes.router, prefix="/api/export", tags=["Export"])
+app.include_router(hardware_routes.router, prefix="/api/hardware", tags=["Hardware"])
 
 @app.get("/")
 def read_root():

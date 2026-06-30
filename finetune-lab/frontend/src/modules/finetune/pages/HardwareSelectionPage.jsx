@@ -2,9 +2,11 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { createTrainingJob } from "../services/trainingApi";
 import { modelApi } from "../services/modelApi";
+import { hardwareApi } from "../services/hardwareApi";
 import { Button } from "../../../components/Button";
-import { Cpu, Play, AlertTriangle, CheckCircle2, Server, Clock } from "lucide-react";
+import { Cpu, Play, AlertTriangle, CheckCircle2, Server, Clock, Layers } from "lucide-react";
 
+// Reference GPUs used only for VRAM/time estimation when no real GPU is detected.
 const AVAILABLE_GPUS = [
   { id: "RTX_3060", name: "RTX 3060", vram: 12, speed: 1 },
   { id: "RTX_4090", name: "RTX 4090", vram: 24, speed: 3.5 },
@@ -17,12 +19,16 @@ export default function HardwareSelectionPage() {
   const location = useLocation();
   const { modelId, datasetPath, datasetName, trainingConfig } = location.state || {};
 
+  const [gpuOptions, setGpuOptions] = useState(AVAILABLE_GPUS);
+  const [detectedCount, setDetectedCount] = useState(0); // real CUDA GPUs
+  const [numGpus, setNumGpus] = useState(1);              // GPUs to use (DDP)
   const [selectedGpu, setSelectedGpu] = useState(AVAILABLE_GPUS[0]);
   const [modelData, setModelData] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [launchError, setLaunchError] = useState(null);
 
   const missingInputs = !modelId || !datasetPath;
+  const detected = detectedCount > 0;
 
   useEffect(() => {
     if (modelId) {
@@ -30,15 +36,33 @@ export default function HardwareSelectionPage() {
     }
   }, [modelId]);
 
+  // Detect real GPUs; fall back to the reference list if none/unavailable.
+  useEffect(() => {
+    hardwareApi.getGpus().then(data => {
+      const real = (data.gpus || []).filter(g => g.vram_total > 0);
+      if (real.length > 0) {
+        const opts = real.map(g => ({
+          id: String(g.id),
+          name: g.name,
+          vram: Math.max(1, Math.round(g.vram_total / 1024)),
+          speed: 1,
+          real: true,
+        }));
+        setGpuOptions(opts);
+        setSelectedGpu(opts[0]);
+        setDetectedCount(real.length);
+      }
+    }).catch(() => {});
+  }, []);
+
   // VRAM & Time Estimation Engine
   const estimation = useMemo(() => {
     if (!modelData || !trainingConfig) return { vram: 0, time: "Calculating...", fits: true };
-    
+
     // Base VRAM is the registry's 4-bit minimum; scale by method/precision.
     let estVram = modelData.min_vram;
 
-    // QLoRA & SFT load the 4-bit base (≈ baseline). LoRA loads the 16-bit base.
-    // Full/CPT/Vision are heavier (not yet implemented, shown for guidance).
+    // QLoRA/SFT/CPT load the 4-bit base; LoRA the 16-bit base; Full is heaviest.
     const MODE_MULTIPLIER = {
       qlora: 1.0,
       sft: 1.0,
@@ -53,16 +77,17 @@ export default function HardwareSelectionPage() {
     const batchMultiplier = (trainingConfig.batch_size * trainingConfig.max_seq_length) / 8192;
     estVram += batchMultiplier;
 
-    // Estimate time (heuristic)
-    const baseHours = 2 * (estVram / 8); 
-    const finalHours = baseHours / selectedGpu.speed;
-    
+    // Estimate time — DDP replicates the model per GPU (per-GPU VRAM unchanged)
+    // but ~scales throughput with the GPU count.
+    const baseHours = 2 * (estVram / 8);
+    const finalHours = baseHours / selectedGpu.speed / Math.max(1, numGpus);
+
     return {
       vram: parseFloat(estVram.toFixed(1)),
       time: finalHours < 1 ? `${Math.round(finalHours * 60)} mins` : `${finalHours.toFixed(1)} hours`,
-      fits: estVram <= selectedGpu.vram
+      fits: estVram <= selectedGpu.vram,
     };
-  }, [modelData, trainingConfig, selectedGpu]);
+  }, [modelData, trainingConfig, selectedGpu, numGpus]);
 
   const launchTraining = async () => {
     if (missingInputs) {
@@ -76,6 +101,7 @@ export default function HardwareSelectionPage() {
         model_name: modelId,
         dataset_path: datasetPath,
         training_type: trainingConfig?.training_type || "sft",
+        num_gpus: numGpus,
         hyperparameters: trainingConfig || {},
       });
       navigate(`/finetune/runs/${job.job_id}`);
@@ -102,11 +128,16 @@ export default function HardwareSelectionPage() {
         <div className="space-y-4">
           <h3 className="text-sm font-bold text-neu-text tracking-widest uppercase flex items-center gap-2">
             <Server size={14} className="text-neu-accent" />
-            Compute Provider
+            {detected ? 'Detected GPUs' : 'Reference GPUs (estimate only)'}
           </h3>
+          {!detected && (
+            <p className="text-[11px] font-mono text-neu-dim">
+              No CUDA GPU detected by the backend — showing reference cards for estimation. Training runs on the server's actual hardware.
+            </p>
+          )}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {AVAILABLE_GPUS.map(gpu => (
-              <div 
+            {gpuOptions.map(gpu => (
+              <div
                 key={gpu.id}
                 onClick={() => setSelectedGpu(gpu)}
                 className={`relative neu-plate p-4 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all duration-300 ${selectedGpu.id === gpu.id ? 'ring-2 ring-neu-accent shadow-[0_0_15px_rgba(255,107,0,0.2)]' : 'hover:-translate-y-1'}`}
@@ -119,6 +150,41 @@ export default function HardwareSelectionPage() {
               </div>
             ))}
           </div>
+        </div>
+
+        {/* Parallelism / Multi-GPU */}
+        <div className="space-y-4">
+          <h3 className="text-sm font-bold text-neu-text tracking-widest uppercase flex items-center gap-2">
+            <Layers size={14} className="text-neu-accent" />
+            Parallelism
+          </h3>
+          <div className="neu-plate p-6 rounded-2xl flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <div className="text-sm font-bold text-neu-text">Multi-GPU (DDP)</div>
+              <p className="text-[11px] text-neu-dim mt-1">
+                {detected
+                  ? `${detectedCount} CUDA GPU${detectedCount > 1 ? 's' : ''} detected. Using more launches distributed training via accelerate.`
+                  : 'Multi-GPU needs the backend to detect CUDA GPUs. Single GPU will be used.'}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              {Array.from({ length: Math.max(detectedCount, 1) }, (_, i) => i + 1).map(n => (
+                <button
+                  key={n}
+                  disabled={n > Math.max(detectedCount, 1)}
+                  onClick={() => setNumGpus(n)}
+                  className={`neu-btn px-4 py-2 rounded-xl text-sm font-bold transition-all ${numGpus === n ? 'text-neu-accent ring-1 ring-neu-accent' : 'text-neu-dim'} ${n > Math.max(detectedCount, 1) ? 'opacity-30 cursor-not-allowed' : ''}`}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+          {numGpus > 1 && (
+            <p className="text-[11px] font-mono text-neu-dim">
+              DDP replicates the model on each GPU — per-GPU VRAM is unchanged, throughput scales with GPU count.
+            </p>
+          )}
         </div>
 
         {/* Estimation Engine Panel */}
@@ -196,6 +262,7 @@ export default function HardwareSelectionPage() {
           <span>MODEL: <span className="text-neu-text">{modelId || '—'}</span></span>
           <span>DATASET: <span className="text-neu-text">{datasetName || '—'}</span></span>
           <span>MODE: <span className="text-neu-text uppercase">{trainingConfig?.training_type || 'sft'}</span></span>
+          <span>GPUS: <span className="text-neu-text">{numGpus}</span></span>
         </div>
 
         {(launchError || missingInputs) && (

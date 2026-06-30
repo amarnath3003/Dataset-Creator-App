@@ -122,6 +122,9 @@ def _build_config(payload: dict[str, Any]):
         packing=bool(num("packing", True if is_cpt else False)),
         # save
         save_steps=int(num("save_steps", 200)),
+        # full fine-tuning + execution
+        full_finetuning=is_full,
+        num_gpus=int(payload.get("num_gpus") or 1),
         **optional,
     )
 
@@ -138,38 +141,110 @@ def _build_config(payload: dict[str, Any]):
     return SFTTrainingConfig(**cfg_kwargs)
 
 
-def run_training_job(payload: dict[str, Any]) -> dict[str, Any]:
-    from training.job_store_sink import JobStoreSink
+def execute_in_process(payload: dict[str, Any], sink) -> dict[str, Any]:
+    """Build the config and run the trainer in THIS process.
 
+    Used directly for single-GPU runs, and by the accelerate entry script on each
+    rank for multi-GPU runs. Telemetry is rank-gated inside the sink.
+    """
     run_id = payload["run_id"]
-    training_type = (payload.get("training_type") or "sft").lower()
-    sink = JobStoreSink(run_id)
-
     try:
-        if training_type in _NOT_YET:
-            raise NotImplementedError(
-                f"Training type '{training_type}' is not implemented yet. "
-                f"Available now: SFT, LoRA, QLoRA, CPT."
-            )
-        if training_type not in _SFT_FAMILY and training_type != _CPT:
-            raise ValueError(f"Unknown training type '{training_type}'.")
-
         from training.unsloth_sft_runner import UnslothSFTRunner
 
         cfg = _build_config(payload)
         runner = UnslothSFTRunner(cfg, sink)
         result = runner.run()  # emits job_succeeded / job_failed itself
         return {"run_id": run_id, "status": result.status}
+    except Exception as exc:  # noqa: BLE001 — surface everything to the UI
+        logger.exception("Training job %s failed during execution", run_id)
+        sink.emit({
+            "type": "job_failed", "run_id": run_id, "status": "failed",
+            "error": str(exc), "traceback": traceback.format_exc(),
+        })
+        return {"run_id": run_id, "status": "failed"}
+
+
+def _run_multi_gpu(payload: dict[str, Any], sink, num_gpus: int) -> dict[str, Any]:
+    """Launch a DDP run across ``num_gpus`` GPUs via ``accelerate launch``.
+
+    Each rank runs the entry script -> ``execute_in_process``; only rank 0 writes
+    telemetry (gated in the sink), so the parent just waits and reports the
+    terminal status.
+    """
+    import subprocess
+
+    from config import BASE_DIR
+    from job_engine import job_store
+
+    run_id = payload["run_id"]
+    output_dir = Path(payload["output_dir"])
+    output_dir.mkdir(parents=True, exist_ok=True)
+    config_path = output_dir / "job_payload.json"
+    config_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    sink.emit({"type": "job_started", "run_id": run_id})
+    sink.emit({"type": "warning", "run_id": run_id,
+               "message": f"Launching multi-GPU training on {num_gpus} GPUs via accelerate..."})
+
+    entry = str(BASE_DIR / "training" / "train_entry.py")
+    cmd = [
+        sys.executable, "-m", "accelerate.commands.launch",
+        "--num_processes", str(num_gpus), "--num_machines", "1",
+        "--mixed_precision", "bf16",
+        entry, "--config", str(config_path),
+    ]
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(BASE_DIR) + os.pathsep + env.get("PYTHONPATH", "")
+
+    try:
+        proc = subprocess.run(cmd, cwd=str(BASE_DIR), env=env,
+                              capture_output=True, text=True)
+    except FileNotFoundError as exc:
+        sink.emit({"type": "job_failed", "run_id": run_id,
+                   "error": f"Could not launch accelerate: {exc}"})
+        return {"run_id": run_id, "status": "failed"}
+
+    # The rank-0 subprocess normally emits the terminal status itself. Only step
+    # in if it died without doing so.
+    job = job_store.get_job(run_id) or {}
+    if job.get("status") not in ("completed", "failed"):
+        if proc.returncode == 0:
+            sink.emit({"type": "job_succeeded", "run_id": run_id, "metrics": {},
+                       "final_checkpoint": str(output_dir / "final")})
+        else:
+            tail = (proc.stderr or proc.stdout or "")[-1500:]
+            sink.emit({"type": "job_failed", "run_id": run_id,
+                       "error": f"Multi-GPU run exited with code {proc.returncode}. {tail}"})
+
+    final = job_store.get_job(run_id) or {}
+    return {"run_id": run_id, "status": final.get("status", "failed")}
+
+
+def run_training_job(payload: dict[str, Any]) -> dict[str, Any]:
+    from training.job_store_sink import JobStoreSink
+
+    run_id = payload["run_id"]
+    training_type = (payload.get("training_type") or "sft").lower()
+    num_gpus = int(payload.get("num_gpus") or 1)
+    sink = JobStoreSink(run_id)
+
+    try:
+        if training_type in _NOT_YET:
+            raise NotImplementedError(
+                f"Training type '{training_type}' is not implemented yet. "
+                f"Available now: SFT, LoRA, QLoRA, CPT, Full."
+            )
+        if training_type not in _SFT_FAMILY and training_type not in (_CPT, _FULL):
+            raise ValueError(f"Unknown training type '{training_type}'.")
+
+        if num_gpus > 1:
+            return _run_multi_gpu(payload, sink, num_gpus)
+        return execute_in_process(payload, sink)
 
     except Exception as exc:  # noqa: BLE001 — surface everything to the UI
-        logger.exception("Training job %s failed before/around execution", run_id)
-        sink.emit(
-            {
-                "type": "job_failed",
-                "run_id": run_id,
-                "status": "failed",
-                "error": str(exc),
-                "traceback": traceback.format_exc(),
-            }
-        )
+        logger.exception("Training job %s failed before execution", run_id)
+        sink.emit({
+            "type": "job_failed", "run_id": run_id, "status": "failed",
+            "error": str(exc), "traceback": traceback.format_exc(),
+        })
         return {"run_id": run_id, "status": "failed"}

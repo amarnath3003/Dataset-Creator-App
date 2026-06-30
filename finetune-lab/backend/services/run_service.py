@@ -21,6 +21,7 @@ def create_run(req) -> dict[str, Any]:
         "model_name": req.model_name,
         "dataset_path": req.dataset_path,
         "output_dir": output_dir,
+        "num_gpus": getattr(req, "num_gpus", 1) or 1,
         "hyperparameters": req.hyperparameters or {},
     }
 
