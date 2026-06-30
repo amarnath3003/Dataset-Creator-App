@@ -1,51 +1,81 @@
+"""File-based job store for training runs.
+
+A single process-wide lock guards all reads/writes so the training worker
+(streaming metric events on a background thread) and the API (status polling)
+never corrupt ``jobs.json``. Persistence is best-effort and atomic via a temp
+file + replace.
+"""
 import json
-import os
+import threading
 from datetime import datetime
 
-JOB_FILE = "storage/jobs.json"
+from config import JOBS_FILE, ensure_dirs
+
+_lock = threading.Lock()
 
 
-def _load():
-
-    if not os.path.exists(JOB_FILE):
+def _load() -> dict:
+    if not JOBS_FILE.exists():
+        return {}
+    try:
+        with open(JOBS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
         return {}
 
-    with open(JOB_FILE, "r") as f:
-        return json.load(f)
+
+def _save(data: dict) -> None:
+    ensure_dirs()
+    tmp = JOBS_FILE.with_suffix(".json.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, default=str)
+    tmp.replace(JOBS_FILE)
 
 
-def _save(data):
-
-    with open(JOB_FILE, "w") as f:
-        json.dump(data, f, indent=2)
-
-
-def create_job(job_id, job_data):
-
-    jobs = _load()
-
-    jobs[job_id] = {
-        **job_data,
-        "status": "queued",
-        "created_at": str(datetime.now()),
-        "progress": 0,
-        "loss": None
-    }
-
-    _save(jobs)
+def create_job(job_id: str, job_data: dict) -> dict:
+    with _lock:
+        jobs = _load()
+        jobs[job_id] = {
+            "job_id": job_id,
+            "status": "queued",
+            "progress": 0,
+            "loss": None,
+            "created_at": str(datetime.now()),
+            **job_data,
+        }
+        _save(jobs)
+        return jobs[job_id]
 
 
-def update_job(job_id, updates):
+def update_job(job_id: str, updates: dict) -> None:
+    with _lock:
+        jobs = _load()
+        if job_id in jobs:
+            jobs[job_id].update(updates)
+            _save(jobs)
 
-    jobs = _load()
 
-    if job_id in jobs:
-        jobs[job_id].update(updates)
+def patch_job(job_id: str, mutate) -> None:
+    """Read-modify-write a single job under the lock.
+
+    ``mutate`` receives the job dict and edits it in place. No-op if the job
+    does not exist (it should always be created before dispatch).
+    """
+    with _lock:
+        jobs = _load()
+        job = jobs.get(job_id)
+        if job is None:
+            return
+        mutate(job)
+        jobs[job_id] = job
         _save(jobs)
 
 
-def get_job(job_id):
+def get_job(job_id: str):
+    with _lock:
+        return _load().get(job_id)
 
-    jobs = _load()
 
-    return jobs.get(job_id)
+def list_jobs() -> list:
+    with _lock:
+        return list(_load().values())

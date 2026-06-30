@@ -15,11 +15,14 @@ const AVAILABLE_GPUS = [
 export default function HardwareSelectionPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { modelId, datasetId, trainingConfig } = location.state || {};
-  
+  const { modelId, datasetPath, datasetName, trainingConfig } = location.state || {};
+
   const [selectedGpu, setSelectedGpu] = useState(AVAILABLE_GPUS[0]);
   const [modelData, setModelData] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [launchError, setLaunchError] = useState(null);
+
+  const missingInputs = !modelId || !datasetPath;
 
   useEffect(() => {
     if (modelId) {
@@ -57,17 +60,23 @@ export default function HardwareSelectionPage() {
   }, [modelData, trainingConfig, selectedGpu]);
 
   const launchTraining = async () => {
+    if (missingInputs) {
+      setLaunchError("Pick a base model and a dataset before launching.");
+      return;
+    }
     setIsSubmitting(true);
+    setLaunchError(null);
     try {
       const job = await createTrainingJob({
-          model_name: modelId || "unsloth/Llama-3.2-1B-bnb-4bit", // Fallback
-          dataset_path: datasetId ? `/datasets/${datasetId}.jsonl` : "yahma/alpaca-cleaned",
-          training_type: trainingConfig?.training_type || "qlora",
-          ...trainingConfig
+        model_name: modelId,
+        dataset_path: datasetPath,
+        training_type: trainingConfig?.training_type || "sft",
+        hyperparameters: trainingConfig || {},
       });
       navigate(`/finetune/runs/${job.job_id}`);
-    } catch(err) {
+    } catch (err) {
       console.error("Failed to start training:", err);
+      setLaunchError(err?.response?.data?.detail || err.message || "Failed to start training.");
       setIsSubmitting(false);
     }
   };
@@ -177,15 +186,36 @@ export default function HardwareSelectionPage() {
           </div>
         </div>
 
+        {/* Run summary */}
+        <div className="neu-trough p-4 rounded-xl flex flex-wrap gap-x-8 gap-y-2 text-[11px] font-mono text-neu-dim">
+          <span>MODEL: <span className="text-neu-text">{modelId || '—'}</span></span>
+          <span>DATASET: <span className="text-neu-text">{datasetName || '—'}</span></span>
+          <span>MODE: <span className="text-neu-text uppercase">{trainingConfig?.training_type || 'sft'}</span></span>
+        </div>
+
+        {(launchError || missingInputs) && (
+          <div className="neu-alert-warn">
+            <AlertTriangle size={16} />
+            <span>{launchError || 'Missing model or dataset — go back and complete the earlier steps.'}</span>
+          </div>
+        )}
+
+        {!estimation.fits && !missingInputs && (
+          <div className="neu-alert-info">
+            <AlertTriangle size={16} />
+            <span>Estimated VRAM exceeds the selected card. You can still launch — the engine auto-falls back on OOM — but expect slower training.</span>
+          </div>
+        )}
+
         <div className="flex justify-between items-center pt-6 border-t border-white/5 mt-8">
           <Button onClick={() => window.history.back()} variant="outline" size="lg">
             Back
           </Button>
-          
-          <button 
-            onClick={launchTraining} 
-            disabled={isSubmitting || !estimation.fits}
-            className={`neu-btn-primary px-8 py-3 flex items-center gap-2 font-bold uppercase tracking-widest text-sm rounded-[24px] ${(isSubmitting || !estimation.fits) ? 'opacity-50 cursor-not-allowed' : ''}`}
+
+          <button
+            onClick={launchTraining}
+            disabled={isSubmitting || missingInputs}
+            className={`neu-btn-primary px-8 py-3 flex items-center gap-2 font-bold uppercase tracking-widest text-sm rounded-[24px] ${(isSubmitting || missingInputs) ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             <Play size={16} fill="currentColor" />
             {isSubmitting ? 'Initializing Job...' : 'Launch Training Run'}

@@ -5,6 +5,7 @@ import json
 import logging
 import math
 import os
+import time
 import traceback
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
@@ -133,6 +134,15 @@ class StreamingMetricsCallback(TrainerCallback):
     def __init__(self, sink: EventSink, run_id: str):
         self.sink = sink
         self.run_id = run_id
+        self.start_time: Optional[float] = None
+
+    def _eta_seconds(self, state: TrainerState) -> int:
+        if not self.start_time or not state.global_step or not state.max_steps:
+            return 0
+        elapsed = time.time() - self.start_time
+        per_step = elapsed / max(state.global_step, 1)
+        remaining = max(state.max_steps - state.global_step, 0)
+        return int(round(per_step * remaining))
 
     def _gpu_snapshot(self) -> dict[str, Any]:
         if not torch.cuda.is_available():
@@ -160,12 +170,15 @@ class StreamingMetricsCallback(TrainerCallback):
         control: TrainerControl,
         **kwargs,
     ):
+        self.start_time = time.time()
         self.sink.emit(
             {
                 "type": "train_begin",
                 "run_id": self.run_id,
                 "global_step": state.global_step,
                 "epoch": state.epoch,
+                "total_steps": state.max_steps,
+                "max_steps": state.max_steps,
                 "gpu": self._gpu_snapshot(),
             }
         )
@@ -184,6 +197,9 @@ class StreamingMetricsCallback(TrainerCallback):
             "global_step": state.global_step,
             "epoch": state.epoch,
             "step": state.global_step,
+            "max_steps": state.max_steps,
+            "total_steps": state.max_steps,
+            "eta_seconds": self._eta_seconds(state),
             "gpu": self._gpu_snapshot(),
         }
         if logs:
@@ -208,6 +224,8 @@ class StreamingMetricsCallback(TrainerCallback):
                 "run_id": self.run_id,
                 "global_step": state.global_step,
                 "epoch": state.epoch,
+                "max_steps": state.max_steps,
+                "total_steps": state.max_steps,
                 "gpu": self._gpu_snapshot(),
             }
         )
@@ -467,8 +485,11 @@ class UnslothSFTRunner:
         tokenizer,
         train_dataset: Dataset,
     ) -> SFTTrainer:
-        # Match SFTTrainer / TrainingArguments behavior through SFTConfig.
-        sft_config = SFTConfig(
+        # Choose precision from the actual GPU: bf16 on Ampere+, else fp16.
+        bf16 = bool(torch.cuda.is_available() and torch.cuda.is_bf16_supported())
+        fp16 = bool(torch.cuda.is_available() and not bf16)
+
+        common_kwargs: dict[str, Any] = dict(
             output_dir=str(self.output_dir),
             num_train_epochs=cfg.num_train_epochs,
             max_steps=cfg.max_steps,
@@ -480,36 +501,53 @@ class UnslothSFTRunner:
             lr_scheduler_type=cfg.lr_scheduler_type,
             optim=cfg.optim,
             seed=cfg.seed,
-            bf16=cfg.bf16,
-            fp16=cfg.fp16,
+            bf16=bf16,
+            fp16=fp16,
             logging_steps=cfg.logging_steps,
             save_strategy=cfg.save_strategy,
             save_steps=cfg.save_steps,
             save_total_limit=cfg.save_total_limit,
-            evaluation_strategy=cfg.evaluation_strategy,
-            eval_steps=cfg.eval_steps,
             report_to=cfg.report_to,
-            packing=cfg.packing,
-            dataset_text_field=cfg.dataset_text_field,
             remove_unused_columns=False,
             gradient_checkpointing=cfg.use_gradient_checkpointing,
             gradient_checkpointing_kwargs={"use_reentrant": False},
-            push_to_hub=cfg.push_to_hub,
-            hub_model_id=cfg.hub_model_id,
-            hub_private_repo=cfg.hub_private_repo,
         )
+
+        # TRL moved these onto SFTConfig in newer releases; on older builds they
+        # belong on the SFTTrainer constructor instead. Try config-first, fall back.
+        sft_only = dict(
+            packing=cfg.packing,
+            max_seq_length=cfg.max_seq_length,
+            dataset_text_field=cfg.dataset_text_field,
+        )
+        try:
+            sft_config = SFTConfig(**common_kwargs, **sft_only)
+            trainer_extra: dict[str, Any] = {}
+        except TypeError:
+            sft_config = SFTConfig(**common_kwargs)
+            trainer_extra = dict(sft_only)
 
         callback = StreamingMetricsCallback(self.sink, cfg.run_id)
 
-        trainer = SFTTrainer(
-            model=model,
-            tokenizer=tokenizer,
-            train_dataset=train_dataset,
-            args=sft_config,
-            callbacks=[callback],
-            dataset_text_field=cfg.dataset_text_field,
-            packing=cfg.packing,
-        )
+        # Newer TRL uses `processing_class`; older uses `tokenizer`.
+        try:
+            trainer = SFTTrainer(
+                model=model,
+                train_dataset=train_dataset,
+                args=sft_config,
+                callbacks=[callback],
+                processing_class=tokenizer,
+                **trainer_extra,
+            )
+        except TypeError:
+            trainer = SFTTrainer(
+                model=model,
+                tokenizer=tokenizer,
+                train_dataset=train_dataset,
+                args=sft_config,
+                callbacks=[callback],
+                **trainer_extra,
+            )
 
         return trainer
 
