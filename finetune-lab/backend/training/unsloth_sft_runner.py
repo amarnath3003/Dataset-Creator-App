@@ -66,6 +66,7 @@ class SFTTrainingConfig:
         ]
     )
     use_rslora: bool = False
+    use_loftq: bool = False
     use_gradient_checkpointing: bool = True
 
     # training
@@ -432,8 +433,7 @@ class UnslothSFTRunner:
             trust_remote_code=cfg.trust_remote_code,
         )
 
-        model = FastLanguageModel.get_peft_model(
-            model,
+        peft_kwargs: dict[str, Any] = dict(
             r=cfg.lora_rank,
             target_modules=cfg.target_modules,
             lora_alpha=cfg.lora_alpha,
@@ -443,6 +443,44 @@ class UnslothSFTRunner:
             random_state=cfg.seed,
             use_rslora=cfg.use_rslora,
         )
+
+        # LoftQ improves QLoRA accuracy but only applies to 4-bit bases and can be
+        # finicky; enable it best-effort and fall back to standard init on failure.
+        loftq_enabled = False
+        if cfg.use_loftq and cfg.load_in_4bit:
+            try:
+                from peft import LoftQConfig
+
+                peft_kwargs["loftq_config"] = LoftQConfig(loftq_bits=4, loftq_iter=1)
+                peft_kwargs["init_lora_weights"] = "loftq"
+                loftq_enabled = True
+            except Exception as exc:  # noqa: BLE001
+                self._emit({"type": "warning", "run_id": cfg.run_id,
+                            "message": f"LoftQ unavailable, using standard LoRA init: {exc}"})
+
+        try:
+            model = FastLanguageModel.get_peft_model(model, **peft_kwargs)
+        except Exception as exc:  # noqa: BLE001
+            if loftq_enabled:
+                self._emit({"type": "warning", "run_id": cfg.run_id,
+                            "message": f"LoftQ init failed ({exc}); retrying with standard LoRA init."})
+                peft_kwargs.pop("loftq_config", None)
+                peft_kwargs.pop("init_lora_weights", None)
+                loftq_enabled = False
+                model = FastLanguageModel.get_peft_model(model, **peft_kwargs)
+            else:
+                raise
+
+        self._emit({
+            "type": "peft_configured",
+            "run_id": cfg.run_id,
+            "lora_rank": cfg.lora_rank,
+            "lora_alpha": cfg.lora_alpha,
+            "lora_dropout": cfg.lora_dropout,
+            "use_rslora": cfg.use_rslora,
+            "loftq": loftq_enabled,
+            "load_in_4bit": cfg.load_in_4bit,
+        })
 
         return model, tokenizer
 

@@ -63,6 +63,22 @@ class JobStoreSink:
                 f"(4bit={event.get('load_in_4bit')}, seq={event.get('max_seq_length')})..."
             )
 
+        elif etype == "peft_configured":
+            quant = "4-bit (QLoRA)" if event.get("load_in_4bit") else "16-bit (LoRA)"
+            extras = []
+            if event.get("use_rslora"):
+                extras.append("rsLoRA")
+            if event.get("loftq"):
+                extras.append("LoftQ")
+            suffix = f" [{', '.join(extras)}]" if extras else ""
+            log(
+                f"> Adapters: LoRA r={event.get('lora_rank')} alpha={event.get('lora_alpha')} "
+                f"dropout={event.get('lora_dropout')} | {quant}{suffix}"
+            )
+
+        elif etype == "warning":
+            log(f"! {event.get('message')}")
+
         elif etype == "dataset_loaded":
             log(f"> Dataset loaded: {event.get('rows')} rows | columns={event.get('columns')}")
 
