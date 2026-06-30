@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Runtime state (saved conversations, caches) — not source
+backend/storage/
+
+# Node / Vite
+frontend/node_modules/
+frontend/dist/
+
+# Env
+.env

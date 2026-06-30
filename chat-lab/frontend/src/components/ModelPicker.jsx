@@ -16,11 +16,12 @@ const keyOf = (r) => (r.kind === 'finetuned' ? `ft:${r.run_id}` : `base:${r.base
  * Dropdown of all chat-able models (fine-tuned runs + base models).
  * `value` is the selected record; `onChange(record)` fires on selection.
  */
-export default function ModelPicker({ value, onChange, label = 'Model', accent = 'accent' }) {
+export default function ModelPicker({ value, onChange, label = 'Model' }) {
   const [finetuned, setFinetuned] = useState([]);
   const [base, setBase] = useState([]);
   const [loading, setLoading] = useState(false);
 
+  // Manual refresh (event handler) — fine to flip the spinner synchronously.
   const load = () => {
     setLoading(true);
     Promise.all([modelApi.getFinetuned(), modelApi.getBase()])
@@ -29,7 +30,13 @@ export default function ModelPicker({ value, onChange, label = 'Model', accent =
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, []);
+  // Initial fetch: state is set only inside the async callbacks, never
+  // synchronously in the effect body.
+  useEffect(() => {
+    Promise.all([modelApi.getFinetuned(), modelApi.getBase()])
+      .then(([ft, b]) => { setFinetuned(ft); setBase(b); })
+      .catch(() => {});
+  }, []);
 
   const lookup = useMemo(() => {
     const m = {};

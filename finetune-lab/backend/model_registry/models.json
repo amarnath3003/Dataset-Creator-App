@@ -53,5 +53,29 @@
     "supports": ["sft", "lora", "qlora", "cpt", "full"],
     "min_vram": 4,
     "quantization": ["4bit"]
+  },
+  {
+    "id": "unsloth/Llama-3.2-11B-Vision-Instruct-bnb-4bit",
+    "name": "Llama 3.2 11B Vision",
+    "family": "Llama",
+    "parameters": "11B",
+    "context_length": 8192,
+    "license": "Meta",
+    "modality": "vision",
+    "supports": ["vision"],
+    "min_vram": 10,
+    "quantization": ["4bit"]
+  },
+  {
+    "id": "unsloth/Qwen2-VL-7B-Instruct-bnb-4bit",
+    "name": "Qwen2-VL 7B",
+    "family": "Qwen",
+    "parameters": "7B",
+    "context_length": 32768,
+    "license": "Apache 2.0",
+    "modality": "vision",
+    "supports": ["vision"],
+    "min_vram": 7,
+    "quantization": ["4bit"]
   }
 ]

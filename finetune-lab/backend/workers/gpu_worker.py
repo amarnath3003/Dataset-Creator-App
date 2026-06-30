@@ -25,7 +25,9 @@ logger = logging.getLogger(__name__)
 _SFT_FAMILY = {"sft", "lora", "qlora"}
 _CPT = "cpt"
 _FULL = "full"
-_NOT_YET = {"vision"}
+_VISION = "vision"
+_KNOWN = _SFT_FAMILY | {_CPT, _FULL, _VISION}
+_NOT_YET: set[str] = set()
 
 # Methods that load a 16-bit base rather than a 4-bit one.
 _SIXTEEN_BIT = {"lora", "full"}
@@ -71,6 +73,7 @@ def _build_config(payload: dict[str, Any]):
     training_type = (payload.get("training_type") or "sft").lower()
     is_cpt = training_type == _CPT
     is_full = training_type == _FULL
+    is_vision = training_type == _VISION
 
     def num(key, default):
         val = hp.get(key, default)
@@ -138,6 +141,14 @@ def _build_config(payload: dict[str, Any]):
         cfg_kwargs["embedding_learning_rate"] = emb_lr_val
         cfg_kwargs["append_eos"] = bool(num("append_eos", True))
 
+    if is_vision:
+        cfg_kwargs["finetune_vision_layers"] = bool(num("finetune_vision_layers", True))
+        cfg_kwargs["finetune_language_layers"] = bool(num("finetune_language_layers", True))
+        cfg_kwargs["finetune_attention_modules"] = bool(num("finetune_attention_modules", True))
+        cfg_kwargs["finetune_mlp_modules"] = bool(num("finetune_mlp_modules", True))
+        if hp.get("vision_instruction"):
+            cfg_kwargs["vision_instruction"] = str(hp["vision_instruction"])
+
     return SFTTrainingConfig(**cfg_kwargs)
 
 
@@ -148,11 +159,17 @@ def execute_in_process(payload: dict[str, Any], sink) -> dict[str, Any]:
     rank for multi-GPU runs. Telemetry is rank-gated inside the sink.
     """
     run_id = payload["run_id"]
+    training_type = (payload.get("training_type") or "sft").lower()
     try:
-        from training.unsloth_sft_runner import UnslothSFTRunner
-
         cfg = _build_config(payload)
-        runner = UnslothSFTRunner(cfg, sink)
+
+        if training_type == _VISION:
+            from training.unsloth_vision_runner import UnslothVisionRunner
+            runner = UnslothVisionRunner(cfg, sink)
+        else:
+            from training.unsloth_sft_runner import UnslothSFTRunner
+            runner = UnslothSFTRunner(cfg, sink)
+
         result = runner.run()  # emits job_succeeded / job_failed itself
         return {"run_id": run_id, "status": result.status}
     except Exception as exc:  # noqa: BLE001 — surface everything to the UI
@@ -230,11 +247,8 @@ def run_training_job(payload: dict[str, Any]) -> dict[str, Any]:
 
     try:
         if training_type in _NOT_YET:
-            raise NotImplementedError(
-                f"Training type '{training_type}' is not implemented yet. "
-                f"Available now: SFT, LoRA, QLoRA, CPT, Full."
-            )
-        if training_type not in _SFT_FAMILY and training_type not in (_CPT, _FULL):
+            raise NotImplementedError(f"Training type '{training_type}' is not implemented yet.")
+        if training_type not in _KNOWN:
             raise ValueError(f"Unknown training type '{training_type}'.")
 
         if num_gpus > 1:

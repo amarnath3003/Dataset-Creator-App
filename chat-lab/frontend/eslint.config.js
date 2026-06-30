@@ -23,7 +23,12 @@ export default defineConfig([
       },
     },
     rules: {
-      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      // Ignore capitalized identifiers (component constants / component-typed
+      // args like `icon: Icon` passed through to JSX).
+      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]', argsIgnorePattern: '^[A-Z_]' }],
+      // Co-locating a small constant/helper with its component only costs HMR
+      // granularity — a warning, not an error.
+      'react-refresh/only-export-components': 'warn',
     },
   },
 ])

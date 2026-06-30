@@ -1,16 +1,17 @@
 # Finetune Lab — Build Roadmap
 
-> **Update 2026-06-30 — Phase 0 + 1 (SFT) + 4 (LoRA/QLoRA) implemented.** The four blocking
-> bugs are fixed, the canonical `UnslothSFTRunner` is wired through the live path, the wizard
-> submits a real `TrainingRequest`, datasets upload for real, and RunDashboard shows true
-> step-based progress / loss / VRAM / ETA / streaming logs. **LoRA vs QLoRA are now distinct:**
-> quantization is derived from the mode (QLoRA/SFT → 4-bit, LoRA → 16-bit with the matching
-> non-`bnb-4bit` checkpoint), LoftQ is wired (4-bit only, graceful fallback), and the adapter
-> config (rank/alpha/dropout/rsLoRA/LoftQ) flows end-to-end. Verified off-GPU: torch-free API
-> boot, route table (no double prefix), event→record translation (real progress), dataset
-> format detection, quantization/model-id resolution, adapter-config log rendering.
-> **Remaining: validate an actual GPU run** on a machine with the ML stack (torch/unsloth/trl).
-> `full`/`cpt`/`vision` are recognised and cleanly reported as not-yet-implemented.
+> **Update 2026-06-30 — all training methods implemented (Phases 0–7).** The four blocking
+> bugs are fixed and the canonical `UnslothSFTRunner` (+ `UnslothVisionRunner` subclass) is
+> wired through the live path. The wizard submits a real `TrainingRequest`; RunDashboard shows
+> true step-based progress / loss / VRAM / ETA / streaming logs. Implemented end-to-end:
+> **SFT, LoRA, QLoRA, CPT, Full, and Vision (VLM)**, each single- or multi-GPU (DDP via
+> `accelerate`). Quantization is mode-derived (QLoRA/SFT/CPT → 4-bit, LoRA/Full → 16-bit with
+> the matching non-`bnb-4bit` checkpoint); LoftQ, rsLoRA, embedding-LR (CPT), and vision layer
+> flags all flow end-to-end. Verified off-GPU: torch-free API boot, route table, event→record
+> translation (real progress), dataset format detection, quant/model-id resolution, full/CPT/
+> vision config mapping, adapter-config log rendering.
+> **Remaining: validate actual GPU runs** on a machine with the ML stack (torch/unsloth/trl) —
+> especially multi-GPU and vision, which depend on the installed Unsloth version's support.
 >
 > **Design principle (per user):** every setting must be user-tunable from the frontend over
 > time. The seam is the free-form `hyperparameters` dict — see the Hyperparameter Contract
@@ -255,8 +256,17 @@ saved adapter on disk. This is the spine every later method reuses.*
 - **Needs GPU validation** — especially multi-GPU, which depends on the installed Unsloth
   version supporting DDP. `utils/memory_guard.py` wiring + `vision` remain.
 
-### Phase 7 — Vision (VLM)
-- `vision_trainer` path, image+text dataset handling, vision-capable models added to registry.
+### Phase 7 — Vision (VLM)  ✅ (2026-06-30)
+- `UnslothVisionRunner` subclasses the text runner (reuses OOM retry, streaming, artifact
+  saving, manifest, rank gating) and overrides three things: `FastVisionModel` load + vision
+  LoRA flags (`finetune_{vision,language,attention,mlp}`), image+text → chat `messages`
+  formatting (auto-detects image/text columns, or uses a pre-formatted `messages` column), and
+  an `UnslothVisionDataCollator`-based trainer with vision SFTConfig kwargs.
+- Registry gains vision models (Llama-3.2-11B-Vision, Qwen2-VL-7B). Dataset picker adds a
+  **Hugging Face dataset-id** source (image datasets aren't uploadable as JSONL). Config page
+  exposes the four layer toggles + the instruction prompt. Works single- or multi-GPU.
+- **Needs GPU validation** — depends on the installed Unsloth exposing `FastVisionModel` /
+  `UnslothVisionDataCollator` (import locations handled defensively).
 
 ### Phase 8 — Export & publish
 - Wire `gguf_exporter` (llama.cpp convert + quant types q4_k_m etc.), `quantizer`, merge

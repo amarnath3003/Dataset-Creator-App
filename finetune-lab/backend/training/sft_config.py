@@ -71,6 +71,13 @@ class SFTTrainingConfig:
     # Full fine-tuning — train all parameters (no LoRA adapters); needs 16-bit base
     full_finetuning: bool = False
 
+    # Vision (VLM) — which parts of a multimodal model to fine-tune
+    finetune_vision_layers: bool = True
+    finetune_language_layers: bool = True
+    finetune_attention_modules: bool = True
+    finetune_mlp_modules: bool = True
+    vision_instruction: str = "Describe this image in detail."
+
     # Execution — number of GPUs (>1 launches DDP via accelerate)
     num_gpus: int = 1
 

@@ -584,3 +584,95 @@
     opacity: 1;
   }
 }
+
+/* ── Markdown rendering for chat bubbles ─────────────────── */
+.prose-chat {
+  color: var(--text-main);
+}
+
+.prose-chat p {
+  margin: 0 0 0.6em;
+}
+
+.prose-chat p:last-child {
+  margin-bottom: 0;
+}
+
+.prose-chat ul,
+.prose-chat ol {
+  margin: 0.4em 0 0.6em;
+  padding-left: 1.3em;
+}
+
+.prose-chat li {
+  margin: 0.2em 0;
+}
+
+.prose-chat ul {
+  list-style: disc;
+}
+
+.prose-chat ol {
+  list-style: decimal;
+}
+
+.prose-chat a {
+  color: var(--accent-light);
+  text-decoration: underline;
+}
+
+.prose-chat code {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.85em;
+  background: #111315;
+  border: 1px solid rgba(0, 0, 0, 0.5);
+  border-radius: 6px;
+  padding: 1px 6px;
+  color: #4ade80;
+}
+
+.prose-chat pre {
+  background: #0d0f11;
+  box-shadow: var(--sh-deep);
+  border: 1px solid rgba(0, 0, 0, 0.6);
+  border-radius: 12px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  margin: 0.6em 0;
+}
+
+.prose-chat pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: #4ade80;
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+
+.prose-chat h1,
+.prose-chat h2,
+.prose-chat h3 {
+  font-weight: 700;
+  margin: 0.6em 0 0.3em;
+  color: var(--text-main);
+}
+
+.prose-chat blockquote {
+  border-left: 3px solid var(--accent);
+  padding-left: 12px;
+  margin: 0.5em 0;
+  color: var(--text-dim);
+}
+
+.prose-chat table {
+  border-collapse: collapse;
+  margin: 0.6em 0;
+  font-size: 0.85em;
+}
+
+.prose-chat th,
+.prose-chat td {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 6px 10px;
+}

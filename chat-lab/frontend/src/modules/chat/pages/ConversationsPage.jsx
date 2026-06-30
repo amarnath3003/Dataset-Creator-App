@@ -10,11 +10,15 @@ export default function ConversationsPage() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
 
+  // Manual refresh (event handler) shows the spinner.
   const load = () => {
     setLoading(true);
     conversationApi.list().then(setItems).catch((e) => toast.error(e.message)).finally(() => setLoading(false));
   };
-  useEffect(() => { load(); }, []);
+  // Initial fetch sets state only in the async callback.
+  useEffect(() => {
+    conversationApi.list().then(setItems).catch(() => {});
+  }, []);
 
   const open = async (id) => {
     try {

@@ -23,6 +23,12 @@ export default function TrainingConfigPage() {
     // CPT (continued pre-training)
     train_embeddings: true,
     embedding_learning_rate: 0.000005,
+    // Vision (VLM)
+    finetune_vision_layers: true,
+    finetune_language_layers: true,
+    finetune_attention_modules: true,
+    finetune_mlp_modules: true,
+    vision_instruction: 'Describe this image in detail.',
   });
 
   const handleUpdate = (field, value) => {
@@ -211,6 +217,49 @@ export default function TrainingConfigPage() {
               </div>
             </div>
 
+            {/* Vision (VLM) Settings */}
+            {config.training_type === 'vision' && (
+              <div className="space-y-4">
+                <h3 className="text-sm font-bold text-neu-text tracking-widest uppercase flex items-center gap-2 mt-6">
+                  <Box size={14} className="text-neu-accent" />
+                  Vision Config
+                </h3>
+                <div className="neu-plate p-6 rounded-2xl space-y-4">
+                  {[
+                    { key: 'finetune_vision_layers', label: 'Vision Layers', desc: 'Tune the image encoder' },
+                    { key: 'finetune_language_layers', label: 'Language Layers', desc: 'Tune the text decoder' },
+                    { key: 'finetune_attention_modules', label: 'Attention Modules', desc: 'Tune attention projections' },
+                    { key: 'finetune_mlp_modules', label: 'MLP Modules', desc: 'Tune feed-forward layers' },
+                  ].map(opt => (
+                    <div key={opt.key} className="flex items-center justify-between">
+                      <div>
+                        <label className="text-sm font-bold text-neu-text">{opt.label}</label>
+                        <p className="text-[10px] text-neu-dim mt-1">{opt.desc}</p>
+                      </div>
+                      <button
+                        onClick={() => handleUpdate(opt.key, !config[opt.key])}
+                        className={`w-12 h-6 rounded-full p-1 transition-colors ${config[opt.key] ? 'bg-neu-accent' : 'bg-neu-dark'}`}
+                      >
+                        <div className={`bg-white w-4 h-4 rounded-full transition-transform ${config[opt.key] ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                      </button>
+                    </div>
+                  ))}
+
+                  <div className="flex flex-col space-y-2 pt-4 border-t border-white/5">
+                    <label className="text-[10px] font-bold text-neu-dim uppercase tracking-widest">Instruction Prompt</label>
+                    <div className="neu-trough">
+                      <textarea
+                        rows={2} value={config.vision_instruction}
+                        onChange={(e) => handleUpdate('vision_instruction', e.target.value)}
+                        className="neu-textarea bg-transparent shadow-none"
+                      />
+                    </div>
+                    <p className="text-[10px] text-neu-dim">Used as the user turn for each image when the dataset has image + text columns.</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
           </div>
 
           {/* LoRA Settings */}
@@ -219,7 +268,7 @@ export default function TrainingConfigPage() {
               <Sliders size={14} className="text-neu-accent" />
               Adapter Configuration
             </h3>
-            <div className={`neu-plate p-6 rounded-2xl space-y-6 transition-opacity duration-300 ${['sft', 'lora', 'qlora', 'cpt'].includes(config.training_type) ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+            <div className={`neu-plate p-6 rounded-2xl space-y-6 transition-opacity duration-300 ${['sft', 'lora', 'qlora', 'cpt', 'vision'].includes(config.training_type) ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
               
               <div className="flex flex-col space-y-2">
                 <label className="text-[10px] font-bold text-neu-dim uppercase tracking-widest flex justify-between">

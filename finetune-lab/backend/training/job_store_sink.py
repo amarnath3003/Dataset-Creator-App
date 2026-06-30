@@ -77,6 +77,8 @@ class JobStoreSink:
                 extras.append("LoftQ")
             if event.get("train_embeddings"):
                 extras.append("+embeddings")
+            if event.get("vision"):
+                extras.append("vision")
             suffix = f" [{', '.join(extras)}]" if extras else ""
             log(
                 f"> Adapters: LoRA r={event.get('lora_rank')} alpha={event.get('lora_alpha')} "

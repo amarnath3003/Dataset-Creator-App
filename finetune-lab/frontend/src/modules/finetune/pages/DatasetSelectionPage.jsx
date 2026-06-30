@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '../../../components/Button';
-import { Database, Upload, Check, Loader2, AlertTriangle, FileJson } from 'lucide-react';
+import { Database, Upload, Check, Loader2, AlertTriangle, FileJson, Download } from 'lucide-react';
 import { datasetApi } from '../services/datasetApi';
 
 // Schemas the SFT engine can train on directly. PREFERENCE is DPO-only.
@@ -26,6 +26,8 @@ export default function DatasetSelectionPage() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
+  const [source, setSource] = useState('uploaded'); // 'uploaded' | 'hf'
+  const [hfDatasetId, setHfDatasetId] = useState('');
 
   const selected = datasets.find((d) => d.id === selectedId) || null;
 
@@ -68,17 +70,24 @@ export default function DatasetSelectionPage() {
   };
 
   const selectedUnsupported = selected && !SFT_OK.has(selected.format);
+  const canProceed = source === 'hf' ? hfDatasetId.trim().length > 0 : (selected && !selectedUnsupported);
 
   const proceed = () => {
-    navigate('/finetune/config', {
-      state: {
-        ...location.state,
-        datasetPath: selected.path,
-        datasetName: selected.name,
-        datasetFormat: selected.format,
-        datasetRows: selected.rows,
-      },
-    });
+    const state =
+      source === 'hf'
+        ? {
+            datasetPath: hfDatasetId.trim(),
+            datasetName: hfDatasetId.trim(),
+            datasetFormat: 'huggingface',
+            datasetRows: null,
+          }
+        : {
+            datasetPath: selected.path,
+            datasetName: selected.name,
+            datasetFormat: selected.format,
+            datasetRows: selected.rows,
+          };
+    navigate('/finetune/config', { state: { ...location.state, ...state } });
   };
 
   return (
@@ -102,6 +111,42 @@ export default function DatasetSelectionPage() {
           </div>
         )}
 
+        {/* Source toggle */}
+        <div className="flex bg-neu-dark p-1.5 rounded-[22px] shadow-[var(--sh-trough)] max-w-md w-full border border-black/50">
+          <button
+            onClick={() => setSource('uploaded')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-2xl text-xs font-bold tracking-widest uppercase transition-all duration-300 ${source === 'uploaded' ? 'bg-neu-base text-neu-accent shadow-[var(--sh-flat)]' : 'text-neu-dim hover:text-neu-text'}`}
+          >
+            <Upload size={15} /> Uploaded / Local
+          </button>
+          <button
+            onClick={() => setSource('hf')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-2xl text-xs font-bold tracking-widest uppercase transition-all duration-300 ${source === 'hf' ? 'bg-neu-base text-neu-accent shadow-[var(--sh-flat)]' : 'text-neu-dim hover:text-neu-text'}`}
+          >
+            <Download size={15} /> Hugging Face
+          </button>
+        </div>
+
+        {source === 'hf' && (
+          <div className="flex flex-col gap-3">
+            <label className="text-[10px] font-bold text-neu-dim uppercase tracking-widest">Dataset ID</label>
+            <div className="neu-trough">
+              <input
+                type="text"
+                value={hfDatasetId}
+                onChange={(e) => setHfDatasetId(e.target.value)}
+                placeholder="unsloth/LaTeX_OCR"
+                className="neu-input bg-transparent shadow-none"
+              />
+            </div>
+            <p className="text-[11px] text-neu-dim">
+              Load a dataset directly from the Hugging Face Hub. Required for image datasets used in{' '}
+              <span className="font-mono text-neu-dim">Vision</span> fine-tuning (e.g.{' '}
+              <span className="font-mono text-neu-dim">unsloth/LaTeX_OCR</span>).
+            </p>
+          </div>
+        )}
+
         {/* Hidden uploader */}
         <input
           ref={fileInputRef}
@@ -111,7 +156,7 @@ export default function DatasetSelectionPage() {
           onChange={(e) => handleUpload(e.target.files[0])}
         />
 
-        {loading ? (
+        {source === 'uploaded' && (loading ? (
           <div className="neu-trough p-12 flex flex-col items-center justify-center gap-3 text-neu-dim rounded-xl">
             <Loader2 size={24} className="animate-spin text-neu-accent" />
             <p className="text-xs font-mono uppercase tracking-widest">Scanning datasets…</p>
@@ -173,7 +218,7 @@ export default function DatasetSelectionPage() {
               </div>
             )}
           </div>
-        )}
+        ))}
 
         {/* Selected dataset detail */}
         {selected && (
@@ -216,8 +261,8 @@ export default function DatasetSelectionPage() {
             onClick={proceed}
             variant="primary"
             size="lg"
-            disabled={!selected || selectedUnsupported}
-            className={!selected || selectedUnsupported ? 'opacity-50 cursor-not-allowed' : ''}
+            disabled={!canProceed}
+            className={!canProceed ? 'opacity-50 cursor-not-allowed' : ''}
           >
             Next: Training Config
           </Button>
