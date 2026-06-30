@@ -1,5 +1,6 @@
 fastapi
 uvicorn
+python-multipart
 celery
 torch
 datasets

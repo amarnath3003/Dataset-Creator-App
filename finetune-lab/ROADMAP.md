@@ -1,5 +1,14 @@
 # Finetune Lab — Build Roadmap
 
+> **Update 2026-06-30 — Phase 0 + Phase 1 (SFT slice) implemented.** The four blocking
+> bugs are fixed, the canonical `UnslothSFTRunner` is wired through the live path, the wizard
+> submits a real `TrainingRequest`, datasets upload for real, and RunDashboard shows true
+> step-based progress / loss / VRAM / ETA / streaming logs. Verified off-GPU: torch-free API
+> boot, correct route table (no double prefix), event→record translation (real progress),
+> dataset format detection. **Remaining: validate an actual GPU run** on a machine with the
+> ML stack (torch/unsloth/trl) installed. Methods `sft`/`lora`/`qlora` run through the runner;
+> `full`/`cpt`/`vision` are recognised and cleanly reported as not-yet-implemented.
+
 > Status: **early skeleton.** The wizard UI, model registry, and a strong (but orphaned)
 > SFT engine exist. The end-to-end path from "click Start" to "model trained" is **not yet
 > connected**, and there are several parallel half-built implementations that need to converge.
