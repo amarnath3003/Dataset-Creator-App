@@ -332,7 +332,7 @@ class UnslothSFTRunner:
             }
         )
 
-        model, tokenizer = FastLanguageModel.from_pretrained(
+        from_pretrained_kwargs: dict[str, Any] = dict(
             model_name=cfg.model_name,
             max_seq_length=cfg.max_seq_length,
             dtype=dtype,
@@ -340,6 +340,23 @@ class UnslothSFTRunner:
             token=cfg.hf_token,
             trust_remote_code=cfg.trust_remote_code,
         )
+        if cfg.full_finetuning:
+            from_pretrained_kwargs["full_finetuning"] = True
+
+        try:
+            model, tokenizer = FastLanguageModel.from_pretrained(**from_pretrained_kwargs)
+        except TypeError as exc:
+            if cfg.full_finetuning:
+                raise RuntimeError(
+                    "This Unsloth version does not support full fine-tuning "
+                    "(full_finetuning=True). Upgrade unsloth, or use LoRA/QLoRA."
+                ) from exc
+            raise
+
+        # Full fine-tuning trains every parameter — no LoRA adapters are added.
+        if cfg.full_finetuning:
+            self._emit({"type": "full_finetuning", "run_id": cfg.run_id})
+            return model, tokenizer
 
         # CPT also tunes the input/output embeddings so the model can adapt to a new
         # domain's vocabulary; add them to the LoRA target modules.

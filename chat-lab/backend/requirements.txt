@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+pydantic
+# --- Inference stack (GPU). The API boots without these; loading a model needs them.
+torch
+transformers
+unsloth
+peft
+accelerate
+bitsandbytes

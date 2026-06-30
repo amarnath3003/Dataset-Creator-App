@@ -68,6 +68,12 @@ class SFTTrainingConfig:
     embedding_learning_rate: Optional[float] = None  # separate (lower) LR for embeddings
     append_eos: bool = False                # append EOS to each raw-text document
 
+    # Full fine-tuning — train all parameters (no LoRA adapters); needs 16-bit base
+    full_finetuning: bool = False
+
+    # Execution — number of GPUs (>1 launches DDP via accelerate)
+    num_gpus: int = 1
+
     # logging / eval / save
     logging_steps: int = 1
     save_strategy: str = "steps"

@@ -6,35 +6,44 @@ All heavy imports (torch / unsloth / trl) are deferred into the function body so
 importing this module — and therefore booting the API — never requires the
 training stack to be installed.
 
-Supported in Phase 1: ``sft``, ``lora``, ``qlora`` (all adapter-based supervised
-training, differing only by quantization). ``full`` / ``cpt`` / ``vision`` are
-recognised but cleanly reported as not-yet-implemented.
+Supported: ``sft`` / ``lora`` / ``qlora`` (adapter-based, differing by
+quantization), ``cpt`` (continued pre-training), and ``full`` (full-parameter,
+16-bit). Any method can run on multiple GPUs via ``num_gpus`` (DDP through
+``accelerate``). ``vision`` is recognised but not yet implemented.
 """
+import json
 import logging
+import os
+import sys
 import traceback
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Methods that route through the supervised LoRA/SFT runner.
+# Methods that route through the supervised LoRA/SFT/full runner.
 _SFT_FAMILY = {"sft", "lora", "qlora"}
 _CPT = "cpt"
-_NOT_YET = {"full", "vision"}
+_FULL = "full"
+_NOT_YET = {"vision"}
+
+# Methods that load a 16-bit base rather than a 4-bit one.
+_SIXTEEN_BIT = {"lora", "full"}
 
 _BNB_4BIT_SUFFIX = "-bnb-4bit"
 
 
 def quant_for(training_type: str, hyperparameters: dict[str, Any]) -> bool:
-    """Decide 4-bit (QLoRA) vs 16-bit (LoRA) loading.
+    """Decide 4-bit vs 16-bit loading.
 
-    - QLoRA / SFT  -> 4-bit base (lowest VRAM).
-    - LoRA         -> 16-bit base (higher quality, more VRAM).
+    - QLoRA / SFT / CPT -> 4-bit base (lowest VRAM).
+    - LoRA / Full       -> 16-bit base (LoRA: higher quality; Full: required).
     An explicit ``load_in_4bit`` in hyperparameters always wins (full tunability).
     """
     explicit = hyperparameters.get("load_in_4bit")
     if explicit is not None:
         return bool(explicit)
-    return (training_type or "sft").lower() != "lora"
+    return (training_type or "sft").lower() not in _SIXTEEN_BIT
 
 
 def resolve_model_name(model_name: str, load_in_4bit: bool) -> str:
@@ -61,12 +70,15 @@ def _build_config(payload: dict[str, Any]):
     hp = payload.get("hyperparameters") or {}
     training_type = (payload.get("training_type") or "sft").lower()
     is_cpt = training_type == _CPT
+    is_full = training_type == _FULL
 
     def num(key, default):
         val = hp.get(key, default)
         return default if val is None else val
 
     load_in_4bit = quant_for(training_type, hp)
+    if is_full:
+        load_in_4bit = False  # full fine-tuning requires a 16-bit base
     model_name = resolve_model_name(payload["model_name"], load_in_4bit)
 
     # Optional overrides for advanced users (pass-through when present).
@@ -78,7 +90,8 @@ def _build_config(payload: dict[str, Any]):
     if hp.get("dtype") is not None:
         optional["dtype"] = str(hp["dtype"])
 
-    learning_rate = float(num("learning_rate", 5e-5 if is_cpt else 2e-4))
+    default_lr = 2e-5 if is_full else (5e-5 if is_cpt else 2e-4)
+    learning_rate = float(num("learning_rate", default_lr))
 
     cfg_kwargs = dict(
         run_id=payload["run_id"],

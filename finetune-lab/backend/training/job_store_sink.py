@@ -8,6 +8,7 @@ This sink is the single translator from that stream into a job record.
 from typing import Any
 
 from job_engine import job_store
+from training.runtime import is_main_process
 
 MAX_LOG_LINES = 500
 
@@ -17,6 +18,10 @@ class JobStoreSink:
         self.run_id = run_id
 
     def emit(self, event: dict[str, Any]) -> None:
+        # Under multi-GPU (DDP) only rank 0 writes the shared job record, so the
+        # processes never race on jobs.json. Single-process runs are always rank 0.
+        if not is_main_process():
+            return
         run_id = event.get("run_id") or self.run_id
         if not run_id:
             return
@@ -77,6 +82,9 @@ class JobStoreSink:
                 f"> Adapters: LoRA r={event.get('lora_rank')} alpha={event.get('lora_alpha')} "
                 f"dropout={event.get('lora_dropout')} | {quant}{suffix}"
             )
+
+        elif etype == "full_finetuning":
+            log("> Full fine-tuning: training ALL parameters (no LoRA adapters), 16-bit base.")
 
         elif etype == "cpt_trainer":
             log(f"> CPT: training embeddings with separate LR = {event.get('embedding_learning_rate')}")
