@@ -232,9 +232,14 @@ saved adapter on disk. This is the spine every later method reuses.*
 - Reuse the SFT spine; the engine already does PEFT. Expose rank/alpha/dropout/rslora/loftq
   (UI exists) end-to-end. QLoRA = `load_in_4bit` + `paged_adamw_8bit` presets.
 
-### Phase 5 — CPT
-- Raw-text corpus loader (no instruction template), packing on by default, `embed_tokens` +
-  `lm_head` added to target modules per Unsloth CPT guidance.
+### Phase 5 — CPT  ✅ (2026-06-30)
+- Implemented as a config variant of the canonical runner (no parallel engine): raw-text
+  training (no instruction template), EOS appended per document, packing on by default,
+  `embed_tokens` + `lm_head` added to target modules, and a separate (lower) embedding LR via
+  Unsloth's CPT trainer with graceful fallback to a single LR. CPT defaults: 1 epoch, lr 5e-5,
+  embedding lr = lr/10, linear schedule. Frontend exposes Train-Embeddings + Embedding-LR.
+  **Needs GPU validation.** Note: corpus is a `text` column in JSONL today; raw `.txt` upload
+  is a future enhancement.
 
 ### Phase 6 — Full fine-tune & multi-GPU
 - Full-param path (no PEFT), `accelerate` launch, `utils/distributed.py` + `utils/memory_guard.py`
@@ -295,6 +300,9 @@ expose any of these incrementally with no backend change**. "UI" = already has a
 | `lora_dropout` | float | 0.0 | ✅ | |
 | `use_rslora` | bool | false | ✅ | rank-stabilized LoRA |
 | `use_loftq` | bool | false | ✅ | 4-bit only; graceful fallback |
+| `train_embeddings` | bool | true (CPT) | ✅ (CPT) | adds embed_tokens + lm_head |
+| `embedding_learning_rate` | float | lr/10 (CPT) | ✅ (CPT) | separate embedding LR |
+| `append_eos` | bool | true (CPT) | — | EOS per raw-text document |
 | `target_modules` | list | unsloth default 7 | — | advanced |
 | `bias` | str | none | — | advanced |
 | `load_in_4bit` | bool | derived from mode | — | explicit override wins |
