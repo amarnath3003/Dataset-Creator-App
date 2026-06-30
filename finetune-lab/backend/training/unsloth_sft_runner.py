@@ -7,15 +7,17 @@ import math
 import os
 import time
 import traceback
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Callable, Literal, Optional, Protocol
+from typing import Any, Optional, Protocol
 
 import torch
 from datasets import Dataset, load_dataset
 from trl import SFTConfig, SFTTrainer
 from transformers import TrainerCallback, TrainerControl, TrainerState, TrainingArguments
 from unsloth import FastLanguageModel
+
+from training.sft_config import SFTTrainingConfig, TrainingRunResult
 
 logger = logging.getLogger(__name__)
 
@@ -25,100 +27,6 @@ logger = logging.getLogger(__name__)
 # -----------------------------
 class EventSink(Protocol):
     def emit(self, event: dict[str, Any]) -> None: ...
-
-
-# -----------------------------
-# Config / results
-# -----------------------------
-@dataclass
-class SFTTrainingConfig:
-    run_id: str
-    model_name: str
-    output_dir: str
-
-    # dataset can be:
-    # - local path to json/jsonl/parquet/csv
-    # - HF dataset name
-    # - already-loaded datasets.Dataset
-    dataset_source: Any
-
-    # model / loading
-    max_seq_length: int = 2048
-    load_in_4bit: bool = True
-    dtype: Optional[str] = None
-    hf_token: Optional[str] = None
-    trust_remote_code: bool = True
-
-    # LoRA
-    lora_rank: int = 16
-    lora_alpha: int = 16
-    lora_dropout: float = 0.0
-    bias: str = "none"
-    target_modules: list[str] = field(
-        default_factory=lambda: [
-            "q_proj",
-            "k_proj",
-            "v_proj",
-            "o_proj",
-            "gate_proj",
-            "up_proj",
-            "down_proj",
-        ]
-    )
-    use_rslora: bool = False
-    use_loftq: bool = False
-    use_gradient_checkpointing: bool = True
-
-    # training
-    num_train_epochs: float = 3.0
-    max_steps: int = -1
-    per_device_train_batch_size: int = 2
-    gradient_accumulation_steps: int = 4
-    learning_rate: float = 2e-4
-    warmup_ratio: float = 0.03
-    weight_decay: float = 0.0
-    lr_scheduler_type: str = "cosine"
-    optim: str = "paged_adamw_8bit"
-    seed: int = 3407
-    bf16: bool = True
-    fp16: bool = False
-    packing: bool = False
-
-    # logging / eval / save
-    logging_steps: int = 1
-    save_strategy: str = "steps"
-    save_steps: int = 200
-    save_total_limit: int = 2
-    evaluation_strategy: str = "no"
-    eval_steps: Optional[int] = None
-    report_to: list[str] = field(default_factory=list)
-
-    # resume / retries
-    resume_from_checkpoint: Optional[str] = None
-    retry_on_oom: bool = True
-    max_oom_retries: int = 2
-
-    # dataset formatting
-    dataset_text_field: str = "text"
-
-    # hub
-    push_to_hub: bool = False
-    hub_model_id: Optional[str] = None
-    hub_private_repo: bool = False
-
-    # optional preformatted text / chat rendering behavior
-    chat_template: Optional[str] = None
-
-
-@dataclass
-class TrainingRunResult:
-    run_id: str
-    status: Literal["succeeded", "failed", "oom_failed"]
-    output_dir: str
-    metrics: dict[str, Any] = field(default_factory=dict)
-    error: Optional[str] = None
-    traceback: Optional[str] = None
-    final_checkpoint: Optional[str] = None
 
 
 # -----------------------------
@@ -433,9 +341,17 @@ class UnslothSFTRunner:
             trust_remote_code=cfg.trust_remote_code,
         )
 
+        # CPT also tunes the input/output embeddings so the model can adapt to a new
+        # domain's vocabulary; add them to the LoRA target modules.
+        target_modules = list(cfg.target_modules)
+        if cfg.train_embeddings:
+            for extra in ("embed_tokens", "lm_head"):
+                if extra not in target_modules:
+                    target_modules.append(extra)
+
         peft_kwargs: dict[str, Any] = dict(
             r=cfg.lora_rank,
-            target_modules=cfg.target_modules,
+            target_modules=target_modules,
             lora_alpha=cfg.lora_alpha,
             lora_dropout=cfg.lora_dropout,
             bias=cfg.bias,
@@ -480,6 +396,7 @@ class UnslothSFTRunner:
             "use_rslora": cfg.use_rslora,
             "loftq": loftq_enabled,
             "load_in_4bit": cfg.load_in_4bit,
+            "train_embeddings": cfg.train_embeddings,
         })
 
         return model, tokenizer
@@ -495,12 +412,22 @@ class UnslothSFTRunner:
             }
         )
 
+        eos = (getattr(tokenizer, "eos_token", "") or "") if cfg.append_eos else ""
+
         if cfg.dataset_text_field in ds.column_names:
-            # Already preformatted.
+            # Already raw text. For CPT, append EOS so documents are separated.
+            if eos:
+                field_name = cfg.dataset_text_field
+                ds = ds.map(
+                    lambda ex: {field_name: (ex[field_name] or "") + eos},
+                    desc="Appending EOS",
+                )
             return ds
 
         def format_example(example: dict[str, Any]) -> dict[str, str]:
             text = self._example_to_text(example, tokenizer, cfg)
+            if eos and text:
+                text = text + eos
             return {cfg.dataset_text_field: text}
 
         formatted = ds.map(format_example, remove_columns=ds.column_names, desc="Formatting dataset")
