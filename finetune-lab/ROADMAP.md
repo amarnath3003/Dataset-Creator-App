@@ -241,9 +241,19 @@ saved adapter on disk. This is the spine every later method reuses.*
   **Needs GPU validation.** Note: corpus is a `text` column in JSONL today; raw `.txt` upload
   is a future enhancement.
 
-### Phase 6 — Full fine-tune & multi-GPU
-- Full-param path (no PEFT), `accelerate` launch, `utils/distributed.py` + `utils/memory_guard.py`
-  wired, multi-GPU toggle honored.
+### Phase 6 — Full fine-tune & multi-GPU  ✅ (2026-06-30)
+- **Full fine-tuning:** `FastLanguageModel.from_pretrained(full_finetuning=True)`, no PEFT
+  adapters, 16-bit base forced (model id auto-resolved off `-bnb-4bit`), lr default 2e-5, clear
+  error if the installed Unsloth lacks the kwarg.
+- **Multi-GPU (DDP):** any method can set `num_gpus > 1` → the run is launched via
+  `accelerate launch` on a standalone entry script (`training/train_entry.py`); telemetry is
+  gated to rank 0 in the sink (`training/runtime.is_main_process`) so processes don't race on
+  `jobs.json`. The parent waits and reports terminal status; failures surface the subprocess
+  stderr tail.
+- **Hardware detection:** `GET /api/hardware/gpus` (lazy torch, graceful when absent); the
+  Hardware page shows detected GPUs and a multi-GPU selector.
+- **Needs GPU validation** — especially multi-GPU, which depends on the installed Unsloth
+  version supporting DDP. `utils/memory_guard.py` wiring + `vision` remain.
 
 ### Phase 7 — Vision (VLM)
 - `vision_trainer` path, image+text dataset handling, vision-capable models added to registry.
@@ -303,14 +313,17 @@ expose any of these incrementally with no backend change**. "UI" = already has a
 | `train_embeddings` | bool | true (CPT) | ✅ (CPT) | adds embed_tokens + lm_head |
 | `embedding_learning_rate` | float | lr/10 (CPT) | ✅ (CPT) | separate embedding LR |
 | `append_eos` | bool | true (CPT) | — | EOS per raw-text document |
+| `full_finetuning` | bool | derived (mode) | — | set by `full` mode; trains all params |
 | `target_modules` | list | unsloth default 7 | — | advanced |
 | `bias` | str | none | — | advanced |
 | `load_in_4bit` | bool | derived from mode | — | explicit override wins |
 | `dtype` | str | auto | — | bf16/fp16/fp32 |
 
-Quantization is otherwise derived from `training_type`: **QLoRA/SFT → 4-bit**, **LoRA → 16-bit**
-(loads the matching non-`bnb-4bit` checkpoint). When adding "Full tunability" UI, add controls
-that write these keys into the wizard's `trainingConfig`; they arrive as `hyperparameters`.
+Quantization is otherwise derived from `training_type`: **QLoRA/SFT/CPT → 4-bit**, **LoRA → 16-bit**,
+**Full → 16-bit** (loads the matching non-`bnb-4bit` checkpoint). `num_gpus` is a **top-level**
+`TrainingRequest` field (not a hyperparameter); `>1` launches DDP via accelerate. When adding
+"Full tunability" UI, add controls that write the hyperparameter keys into the wizard's
+`trainingConfig`; they arrive as `hyperparameters`.
 
 ---
 
