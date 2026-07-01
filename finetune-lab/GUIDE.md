@@ -1,0 +1,195 @@
+# Finetune Lab — Run Guide
+
+No-code, local LLM fine-tuning studio. Pick a model → pick a dataset → configure →
+watch it train live → export. This guide takes you from a fresh clone to a trained
+adapter.
+
+```
+Model → Dataset → Config → Hardware → Review → Launch → Monitor → Export
+```
+
+---
+
+## 1. Prerequisites
+
+| Need | Why | Notes |
+|------|-----|-------|
+| **Python 3.10+** | Backend API + training | 3.10/3.11 recommended (Unsloth support) |
+| **Node.js 18+** | Frontend dev server | includes `npm` |
+| **NVIDIA GPU + CUDA** | Actual training | Required only to *run* training. The UI, dataset upload, estimates, and run history all work without a GPU. |
+
+Two processes run side by side:
+- **Backend** (FastAPI) on `http://localhost:8000`
+- **Frontend** (Vite/React) on `http://localhost:5173`
+
+---
+
+## 2. Install
+
+### Backend
+
+```bash
+cd finetune-lab/backend
+python -m venv .venv
+# Windows:
+.venv\Scripts\activate
+# macOS/Linux:
+source .venv/bin/activate
+
+pip install -r requirements.txt
+```
+
+> **Heads-up on the ML stack.** `requirements.txt` includes `torch`, `unsloth`,
+> `trl`, `bitsandbytes`, etc. These are large and GPU/OS-specific.
+> - On a **GPU box**, install the CUDA build of PyTorch first
+>   (see https://pytorch.org/get-started/locally/), then `pip install unsloth`
+>   (see https://github.com/unslothai/unsloth#installation).
+> - On a **laptop with no GPU** you can still boot the API and drive the whole UI —
+>   the training stack is imported lazily and only needed at "Launch". Install just
+>   the light deps if you only want to explore:
+>   `pip install fastapi uvicorn python-multipart pydantic`.
+
+### Frontend
+
+```bash
+cd finetune-lab/frontend
+npm install
+```
+
+---
+
+## 3. Run
+
+**Terminal 1 — backend:**
+
+```bash
+cd finetune-lab/backend
+python start_backend.py
+```
+Serves on `http://0.0.0.0:8000` with auto-reload. Sanity check: open
+`http://localhost:8000/docs` — you should see the API (models, datasets, training,
+export, hardware).
+
+**Terminal 2 — frontend:**
+
+```bash
+cd finetune-lab/frontend
+npm run dev
+```
+Open the printed URL (default `http://localhost:5173`).
+
+> **Different backend host/port?** Create `finetune-lab/frontend/.env`:
+> ```
+> VITE_API_URL=http://your-host:8000
+> ```
+
+---
+
+## 4. End-to-end flow
+
+Everything below is driven from the sidebar of the web app.
+
+### Step 0 — Dashboard
+Landing page: recent runs, detected GPUs, quick **New Run**. Click **New Run** (or
+sidebar → New Run).
+
+### Step 1 — Model
+Three sources:
+- **Registry** — curated Unsloth models (Llama 3, Mistral, Qwen, Gemma, Phi, + two
+  Vision models). Recommended.
+- **Hugging Face** — paste any repo id, e.g. `unsloth/llama-3-8b-Instruct-bnb-4bit`.
+- **Local File** — absolute path to a model dir on the training server.
+
+Registry models show which methods they support; the Config step filters to those.
+
+### Step 2 — Dataset
+- **Upload** a `.jsonl` / `.json` / `.csv` file. The backend auto-detects the schema
+  and row count. Supported schemas for supervised training:
+
+  | Schema | Shape |
+  |--------|-------|
+  | Instruction | `{"instruction","input","output"}` |
+  | ChatML | `{"messages":[{"role","content"}]}` |
+  | ShareGPT | `{"conversations":[...]}` |
+  | Completion / CPT | `{"text": "..."}` (raw corpus) |
+
+  Preference data (`chosen`/`rejected`) is flagged as DPO-only and blocked for SFT.
+- **Hugging Face** — paste a dataset id. Required for **Vision** (image datasets),
+  e.g. `unsloth/LaTeX_OCR`.
+
+### Step 3 — Config
+- Pick the **method**: QLoRA, LoRA, SFT, Full, CPT, or Vision (list is filtered to
+  what the model supports).
+- **Smart Config** button auto-fills method/rank/batch/grad-accum from the model
+  size — a good starting point.
+- Tune core hyperparameters (epochs, LR, batch, grad-accum, seq length) and, under
+  **Advanced**, scheduler/optimizer/warmup/decay/save-steps/seed.
+- Method-specific panels appear for LoRA (rank/alpha/dropout/rsLoRA/LoftQ), CPT
+  (train-embeddings + embedding LR), and Vision (which layers to tune + prompt).
+
+### Step 4 — Hardware
+Shows detected CUDA GPUs (or reference cards for estimation if none). Pick a card,
+optionally enable **Multi-GPU (DDP)**, and read the VRAM/time estimate + OOM guard.
+
+### Step 5 — Review & Launch
+Full summary + the exact hyperparameter payload. Click **Launch Training Run**.
+
+### Step 6 — Monitor (Run Dashboard)
+Live: status, loss number **and loss curve**, step/epoch, VRAM, tok/s, ETA, and a
+streaming log terminal. **Stop** cancels cooperatively (saves a partial adapter).
+Artifacts land in `backend/storage/runs/<run_id>/final/`.
+
+### Step 7 — Export
+On a finished (or cancelled) run, the Export panel offers:
+- **Adapter** — copy the LoRA adapter (instant, no GPU).
+- **Merged 16-bit** — merge base + adapter into a standalone checkpoint.
+- **GGUF** — llama.cpp / Ollama format (quant set in Settings).
+- **Push to Hub** — upload the merged model to Hugging Face.
+
+For Hub pushes, add your HF token in **Settings** first (stored in your browser's
+localStorage; sent only to your local backend for that push). Export jobs are
+tracked on the **Exports** page.
+
+---
+
+## 5. Where things live
+
+```
+finetune-lab/backend/storage/
+  datasets/          uploaded datasets
+  runs/<id>/final/   trained adapter + tokenizer + run_manifest.json
+  exports/<id>/      merged / gguf artifacts
+  jobs.json          run state (status, loss history, logs)
+  exports.json       export job state
+```
+
+---
+
+## 6. Troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| `Form data requires "python-multipart"` on API boot | `pip install python-multipart` (it's in requirements — you likely booted a different interpreter). |
+| Frontend loads but every call fails / CORS | Backend not running on `:8000`, or set `VITE_API_URL`. CORS is already open (`*`). |
+| Hardware step shows "Reference GPUs" | No CUDA GPU detected. UI + estimates still work; actual training needs a real GPU. |
+| Launch → run immediately **failed**, log mentions `unsloth`/`torch` | The ML training stack isn't installed in the backend's Python env. Install torch (CUDA) + unsloth on the GPU box. |
+| OOM during training | The runner auto-retries with lighter settings (visible in the log). Or lower batch/seq length, enable QLoRA/4-bit. |
+| Multi-GPU run fails to launch | Needs `accelerate` installed and >1 CUDA GPU; single-GPU always works. |
+| Port 8000 / 5173 already in use | Stop the other process, or change the port (`start_backend.py` / `vite --port`). |
+
+---
+
+## 7. Quick verification (no GPU needed)
+
+You can confirm the whole wiring works without training:
+
+1. Start backend + frontend.
+2. New Run → any registry model → upload a small instruction `.jsonl` (a few rows).
+3. Walk through Config → Hardware → Review → Launch.
+4. The run appears on the **Runs** page and streams status. Without the GPU stack it
+   will end in `failed` at the training step — that's expected; every step *before*
+   the trainer (upload, detection, run creation, status, stop, delete, export
+   guards) is fully functional.
+
+On a GPU box with the ML stack installed, the same flow trains to completion and
+writes a loadable adapter.
