@@ -37,31 +37,32 @@ python -m venv .venv
 source .venv/bin/activate
 ```
 
-**If you have an NVIDIA GPU** (this is the path that lets you actually train),
-install torch from PyTorch's own CUDA index **first** — plain `pip install -r
-requirements.txt` on its own silently gives you the CPU-only build even with a
-GPU present, no error, training just fails at launch:
+**If you have an NVIDIA GPU** (this is the path that lets you actually train):
+plain `pip install -r requirements.txt` silently gives you the **CPU-only** torch
+wheel even with a GPU present — no error, `torch.cuda.is_available()` just returns
+`False` and training fails at launch. Install the full stack, then force the CUDA
+build of torch:
 
 ```bash
-# pick the tag matching your driver (cu121 / cu124 / cu126 / ...) — see
-# https://pytorch.org/get-started/locally/. cu124 works for most current drivers.
-pip install --index-url https://download.pytorch.org/whl/cu124 torch
-
-# verify BEFORE installing the rest:
-python -c "import torch; print(torch.cuda.is_available(), torch.__version__)"
-# expect: True 2.x.x+cu124
-
+# 1) install everything (this resolves unsloth's pins; torch may come as CPU)
 pip install -r requirements.txt
+
+# 2) note the torch version pip settled on
+python -c "import torch; print(torch.__version__)"     # e.g. 2.10.0
+
+# 3) reinstall that exact version from the CUDA index (cu126 carries 2.10+;
+#    cu124 only goes to 2.6.0). --no-deps so nothing else gets disturbed.
+pip install --index-url https://download.pytorch.org/whl/cu126 \
+    torch==<version-from-step-2> torchvision --force-reinstall --no-deps
+
+# 4) verify — MUST print True and a +cuXXX build
+python -c "import torch; print(torch.cuda.is_available(), torch.__version__)"
+# expect: True 2.x.x+cu126
 ```
 
-Installing torch first works because `requirements.txt` lists `torch` unpinned —
-once a torch build is already installed, pip treats the requirement as satisfied
-and won't swap it back to the CPU wheel. (If you ever need to force a change:
-`pip install --index-url ... torch --force-reinstall`.)
-
-Then `pip install unsloth` may print extra guidance for your CUDA/torch
-combination — follow it if it asks for a specific extra (see
-https://github.com/unslothai/unsloth#installation).
+A newer driver runs older `cuXXX` wheels fine (forward compatible), so cu126 is a
+safe default. Verified combo: RTX 3070 / driver 591.59 → `torch 2.10.0+cu126`,
+`bitsandbytes 0.49.2`, `unsloth 2026.6.9`, trains end-to-end.
 
 **No GPU / just exploring the UI?** The training stack is imported lazily and
 only touched at "Launch" — everything else (dataset upload, model registry,

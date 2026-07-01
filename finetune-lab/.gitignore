@@ -7,6 +7,9 @@ venv/
 # Runtime training state & artifacts (not source)
 backend/storage/
 
+# Unsloth compiled-kernel cache (regenerated at runtime; cwd-dependent location)
+unsloth_compiled_cache/
+
 # Node / Vite
 frontend/node_modules/
 frontend/dist/

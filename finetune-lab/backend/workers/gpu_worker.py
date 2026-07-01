@@ -181,12 +181,18 @@ def execute_in_process(payload: dict[str, Any], sink) -> dict[str, Any]:
         return {"run_id": run_id, "status": "failed"}
 
 
-def _run_multi_gpu(payload: dict[str, Any], sink, num_gpus: int) -> dict[str, Any]:
-    """Launch a DDP run across ``num_gpus`` GPUs via ``accelerate launch``.
+def _run_subprocess(payload: dict[str, Any], sink, num_gpus: int) -> dict[str, Any]:
+    """Launch the run in an isolated child process (single-GPU or DDP).
 
-    Each rank runs the entry script -> ``execute_in_process``; only rank 0 writes
-    telemetry (gated in the sink), so the parent just waits and reports the
-    terminal status.
+    Training always runs out-of-process from the API server, never inline in an
+    ASGI worker thread. FastAPI's ``BackgroundTasks`` executes sync callables via
+    a thread-pool worker thread (not the main thread) — and empirically, loading
+    Unsloth/bitsandbytes/CUDA there crashes the whole interpreter hard on Windows
+    (no exception, no log line, the process just dies). A subprocess sidesteps
+    that entirely and matches the existing multi-GPU isolation model. The child
+    runs ``train_entry.py`` -> ``execute_in_process``; it owns the job record
+    (gated to rank 0 under DDP), so the parent just waits and reports terminal
+    status if the child died without doing so itself.
     """
     import subprocess
 
@@ -200,16 +206,20 @@ def _run_multi_gpu(payload: dict[str, Any], sink, num_gpus: int) -> dict[str, An
     config_path.write_text(json.dumps(payload), encoding="utf-8")
 
     sink.emit({"type": "job_started", "run_id": run_id})
-    sink.emit({"type": "warning", "run_id": run_id,
-               "message": f"Launching multi-GPU training on {num_gpus} GPUs via accelerate..."})
 
     entry = str(BASE_DIR / "training" / "train_entry.py")
-    cmd = [
-        sys.executable, "-m", "accelerate.commands.launch",
-        "--num_processes", str(num_gpus), "--num_machines", "1",
-        "--mixed_precision", "bf16",
-        entry, "--config", str(config_path),
-    ]
+    if num_gpus > 1:
+        sink.emit({"type": "warning", "run_id": run_id,
+                   "message": f"Launching multi-GPU training on {num_gpus} GPUs via accelerate..."})
+        cmd = [
+            sys.executable, "-m", "accelerate.commands.launch",
+            "--num_processes", str(num_gpus), "--num_machines", "1",
+            "--mixed_precision", "bf16",
+            entry, "--config", str(config_path),
+        ]
+    else:
+        cmd = [sys.executable, entry, "--config", str(config_path)]
+
     env = dict(os.environ)
     env["PYTHONPATH"] = str(BASE_DIR) + os.pathsep + env.get("PYTHONPATH", "")
 
@@ -218,20 +228,20 @@ def _run_multi_gpu(payload: dict[str, Any], sink, num_gpus: int) -> dict[str, An
                               capture_output=True, text=True)
     except FileNotFoundError as exc:
         sink.emit({"type": "job_failed", "run_id": run_id,
-                   "error": f"Could not launch accelerate: {exc}"})
+                   "error": f"Could not launch training subprocess: {exc}"})
         return {"run_id": run_id, "status": "failed"}
 
-    # The rank-0 subprocess normally emits the terminal status itself. Only step
-    # in if it died without doing so.
+    # The child normally emits the terminal status itself. Only step in if it
+    # died without doing so (e.g. a hard crash with no Python exception).
     job = job_store.get_job(run_id) or {}
-    if job.get("status") not in ("completed", "failed"):
+    if job.get("status") not in ("completed", "failed", "cancelled"):
         if proc.returncode == 0:
             sink.emit({"type": "job_succeeded", "run_id": run_id, "metrics": {},
                        "final_checkpoint": str(output_dir / "final")})
         else:
             tail = (proc.stderr or proc.stdout or "")[-1500:]
             sink.emit({"type": "job_failed", "run_id": run_id,
-                       "error": f"Multi-GPU run exited with code {proc.returncode}. {tail}"})
+                       "error": f"Training subprocess exited with code {proc.returncode}. {tail}"})
 
     final = job_store.get_job(run_id) or {}
     return {"run_id": run_id, "status": final.get("status", "failed")}
@@ -251,9 +261,7 @@ def run_training_job(payload: dict[str, Any]) -> dict[str, Any]:
         if training_type not in _KNOWN:
             raise ValueError(f"Unknown training type '{training_type}'.")
 
-        if num_gpus > 1:
-            return _run_multi_gpu(payload, sink, num_gpus)
-        return execute_in_process(payload, sink)
+        return _run_subprocess(payload, sink, num_gpus)
 
     except Exception as exc:  # noqa: BLE001 — surface everything to the UI
         logger.exception("Training job %s failed before execution", run_id)

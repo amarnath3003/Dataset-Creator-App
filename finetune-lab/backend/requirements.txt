@@ -1,16 +1,21 @@
 # --- ML / GPU stack ------------------------------------------------------
-# `pip install -r requirements.txt` alone gives you the CPU-only build of
-# torch from PyPI (silently — no error, just no CUDA). Install torch FIRST
-# from PyTorch's own index so pip resolves the CUDA build, THEN install the
-# rest of this file (torch will already satisfy the unpinned requirement
-# below and won't be swapped back to CPU):
+# WARNING: `pip install -r requirements.txt` on its own gives you the CPU-only
+# torch wheel from PyPI (silently — no error, `torch.cuda.is_available()` just
+# returns False). Recommended install order on a GPU box:
 #
-#   pip install --index-url https://download.pytorch.org/whl/cu124 torch
-#   pip install -r requirements.txt
+#   1) pip install -r requirements.txt          # resolves all pins (may pull CPU torch)
+#   2) python -c "import torch; print(torch.__version__)"   # note the version, e.g. 2.10.0
+#   3) pip install --index-url https://download.pytorch.org/whl/cu126 \
+#          torch==<that-version> torchvision --force-reinstall --no-deps
+#   4) python -c "import torch; print(torch.cuda.is_available(), torch.__version__)"
+#      # expect: True  2.x.x+cu126
 #
-# Match the CUDA tag (cu121 / cu124 / cu126 / ...) to your GPU driver — see
-# https://pytorch.org/get-started/locally/. Verify afterward with:
-#   python -c "import torch; print(torch.cuda.is_available(), torch.__version__)"
+# Pick the CUDA tag with the matching torch version — cu126 carries 2.10.0/2.11/2.12,
+# cu124 tops out at 2.6.0 (see https://download.pytorch.org/whl/). A newer driver
+# runs older cu wheels fine (forward compatible).
+#
+# Verified working combo (RTX 3070, driver 591.59): torch 2.10.0+cu126,
+# torchvision 0.25.0, bitsandbytes 0.49.2, unsloth 2026.6.9.
 torch
 unsloth
 trl

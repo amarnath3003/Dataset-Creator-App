@@ -15,9 +15,15 @@ from __future__ import annotations
 
 from typing import Any
 
+# Unsloth must be imported before torch/trl/transformers (see the note in
+# unsloth_sft_runner.py). The base-runner import below already pulls Unsloth in
+# first, but keep the explicit unsloth import ahead of torch/trl here too so this
+# module is order-safe on its own.
+import unsloth  # noqa: F401  (side-effecting: must run before torch/trl/transformers)
+from unsloth import FastVisionModel
+
 import torch
 from trl import SFTConfig, SFTTrainer
-from unsloth import FastVisionModel
 
 from training.unsloth_sft_runner import StreamingMetricsCallback, UnslothSFTRunner
 

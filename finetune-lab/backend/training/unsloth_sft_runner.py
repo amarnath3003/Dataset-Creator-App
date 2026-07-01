@@ -11,11 +11,18 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Optional, Protocol
 
+# IMPORTANT: Unsloth MUST be imported before torch/trl/transformers/peft. It
+# patches bitsandbytes + those libraries at import time; importing them first
+# leaves the patching half-applied and, on Windows/CUDA, hard-crashes the
+# interpreter with an access violation (0xC0000005) at model-load time rather
+# than raising. Keep `import unsloth` at the very top of the third-party block.
+import unsloth  # noqa: F401  (side-effecting: must run before torch/trl/transformers)
+from unsloth import FastLanguageModel
+
 import torch
 from datasets import Dataset, load_dataset
 from trl import SFTConfig, SFTTrainer
 from transformers import TrainerCallback, TrainerControl, TrainerState, TrainingArguments
-from unsloth import FastLanguageModel
 
 from training.sft_config import SFTTrainingConfig, TrainingRunResult
 

@@ -33,3 +33,7 @@ Thumbs.db
 .pytest_cache/
 lint_output*.txt
 finetune-lab/plan.md
+
+# Unsloth compiled-kernel cache (regenerated at runtime; created in whichever
+# cwd the trainer runs from — repo root or finetune-lab/backend)
+unsloth_compiled_cache/
