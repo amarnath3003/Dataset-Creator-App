@@ -11,6 +11,7 @@ from job_engine import job_store
 from training.runtime import is_main_process
 
 MAX_LOG_LINES = 500
+MAX_LOSS_POINTS = 1000
 
 
 class JobStoreSink:
@@ -113,6 +114,15 @@ class JobStoreSink:
                 job["total_steps"] = total
             if event.get("loss") is not None:
                 job["loss"] = round(float(event["loss"]), 4)
+                # Append to the rolling loss series that feeds the RunDashboard chart.
+                series = job.setdefault("loss_history", [])
+                step = event.get("global_step") or event.get("step") or job.get("step", 0)
+                series.append({"step": step, "loss": job["loss"]})
+                overflow = len(series) - MAX_LOSS_POINTS
+                if overflow > 0:
+                    del series[:overflow]
+            if event.get("train_runtime") is None and event.get("tokens_per_second") is not None:
+                job["tokens_per_sec"] = round(float(event["tokens_per_second"]), 1)
             if event.get("learning_rate") is not None:
                 job["learning_rate"] = event["learning_rate"]
             if event.get("epoch") is not None:
@@ -149,13 +159,24 @@ class JobStoreSink:
         elif etype == "push_to_hub":
             log(f"> Pushing to Hugging Face Hub: {event.get('hub_model_id')}")
 
+        elif etype == "cancelled":
+            # Loop is stopping cooperatively; artifacts still get saved below.
+            job["status"] = "cancelled"
+            log("> Cancellation requested — stopping at the next step boundary...")
+
         elif etype == "job_succeeded":
-            job["status"] = "completed"
-            job["progress"] = 100
+            # A run cancelled mid-flight still saves its partial adapter; keep the
+            # terminal status as "cancelled" rather than flipping to completed.
+            already_cancelled = job.get("status") in ("cancelled", "cancelling")
+            job["status"] = "cancelled" if already_cancelled else "completed"
+            job["progress"] = job.get("progress", 0) if already_cancelled else 100
             job["final_dir"] = event.get("final_checkpoint")
             job["metrics"] = event.get("metrics")
             job["eta_seconds"] = 0
-            log("> [OK] Training complete. Adapter + tokenizer saved.")
+            if already_cancelled:
+                log("> [STOPPED] Run cancelled. Partial adapter + tokenizer saved.")
+            else:
+                log("> [OK] Training complete. Adapter + tokenizer saved.")
 
         elif etype in ("job_failed", "oom_failed"):
             job["status"] = "failed"

@@ -3,6 +3,7 @@
 Kept free of heavy ML imports so it can be imported at API boot. The actual
 worker (which pulls in torch/unsloth) is imported lazily inside ``dispatch``.
 """
+import shutil
 import uuid
 from typing import Any
 
@@ -47,6 +48,13 @@ def create_run(req) -> dict[str, Any]:
     )
 
     return {"run_id": run_id, "payload": payload}
+
+
+def delete_run_artifacts(run_id: str) -> None:
+    """Remove a run's on-disk output tree (adapters, checkpoints, manifest)."""
+    run_dir = RUNS_DIR / run_id
+    if run_dir.exists():
+        shutil.rmtree(run_dir, ignore_errors=True)
 
 
 def dispatch(payload: dict[str, Any]) -> None:

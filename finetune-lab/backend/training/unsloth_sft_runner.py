@@ -22,6 +22,21 @@ from training.sft_config import SFTTrainingConfig, TrainingRunResult
 logger = logging.getLogger(__name__)
 
 
+def _is_cancel_requested(run_id: str) -> bool:
+    """True when the API has flagged this run for cooperative cancellation.
+
+    Best-effort: any failure (missing store, IO error) is treated as "keep
+    training" so a transient read never kills a healthy run.
+    """
+    try:
+        from job_engine import job_store
+
+        job = job_store.get_job(run_id) or {}
+        return job.get("status") == "cancelling"
+    except Exception:  # noqa: BLE001
+        return False
+
+
 # -----------------------------
 # Event sink interface
 # -----------------------------
@@ -127,6 +142,14 @@ class StreamingMetricsCallback(TrainerCallback):
         control: TrainerControl,
         **kwargs,
     ):
+        # Cooperative cancellation: the /stop route flips the job status to
+        # "cancelling"; we halt the loop at this step boundary. Only the main
+        # process owns the job record (DDP ranks are gated in the sink).
+        if _is_cancel_requested(self.run_id):
+            control.should_training_stop = True
+            self.sink.emit({"type": "cancelled", "run_id": self.run_id,
+                            "global_step": state.global_step})
+
         self.sink.emit(
             {
                 "type": "step_end",

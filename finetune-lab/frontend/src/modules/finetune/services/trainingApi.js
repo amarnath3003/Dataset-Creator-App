@@ -1,20 +1,7 @@
-import axios from "axios";
+import { training } from "./finetuneApi";
 
-const API = "http://localhost:8000/api";
-
-export const createTrainingJob = async (data) => {
-  const response = await axios.post(
-    `${API}/training/create`,
-    data
-  );
-
-  return response.data;
-};
-
-export const getTrainingStatus = async (jobId) => {
-  const response = await axios.get(
-    `${API}/training/status/${jobId}`
-  );
-  
-  return response.data;
-};
+export const createTrainingJob = (data) => training.create(data);
+export const getTrainingStatus = (jobId) => training.status(jobId);
+export const listRuns = () => training.listRuns();
+export const stopRun = (jobId) => training.stop(jobId);
+export const deleteRun = (jobId) => training.remove(jobId);

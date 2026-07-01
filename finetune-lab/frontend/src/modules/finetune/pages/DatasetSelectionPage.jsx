@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '../../../components/Button';
 import { Database, Upload, Check, Loader2, AlertTriangle, FileJson, Download } from 'lucide-react';
 import { datasetApi } from '../services/datasetApi';
+import { useWizard } from '../context/WizardContext';
 
 // Schemas the SFT engine can train on directly. PREFERENCE is DPO-only.
 const SFT_OK = new Set(['instruction', 'chatml', 'sharegpt', 'completion']);
@@ -18,7 +19,7 @@ const FORMAT_LABEL = {
 
 export default function DatasetSelectionPage() {
   const navigate = useNavigate();
-  const location = useLocation();
+  const { update } = useWizard();
   const fileInputRef = useRef(null);
 
   const [datasets, setDatasets] = useState([]);
@@ -73,7 +74,7 @@ export default function DatasetSelectionPage() {
   const canProceed = source === 'hf' ? hfDatasetId.trim().length > 0 : (selected && !selectedUnsupported);
 
   const proceed = () => {
-    const state =
+    const patch =
       source === 'hf'
         ? {
             datasetPath: hfDatasetId.trim(),
@@ -87,7 +88,8 @@ export default function DatasetSelectionPage() {
             datasetFormat: selected.format,
             datasetRows: selected.rows,
           };
-    navigate('/finetune/config', { state: { ...location.state, ...state } });
+    update(patch);
+    navigate('/finetune/new/config');
   };
 
   return (
@@ -254,7 +256,7 @@ export default function DatasetSelectionPage() {
         )}
 
         <div className="flex justify-between pt-4 border-t border-white/5 mt-4">
-          <Button onClick={() => navigate('/finetune/models')} variant="outline" size="lg">
+          <Button onClick={() => navigate('/finetune/new/model')} variant="outline" size="lg">
             Back
           </Button>
           <Button
