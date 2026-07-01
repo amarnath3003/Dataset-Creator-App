@@ -71,6 +71,17 @@ def patch_job(job_id: str, mutate) -> None:
         _save(jobs)
 
 
+def delete_job(job_id: str) -> bool:
+    """Remove a job record. Returns True if one was deleted."""
+    with _lock:
+        jobs = _load()
+        if job_id in jobs:
+            del jobs[job_id]
+            _save(jobs)
+            return True
+        return False
+
+
 def get_job(job_id: str):
     with _lock:
         return _load().get(job_id)

@@ -12,6 +12,13 @@
 > vision config mapping, adapter-config log rendering.
 > **Remaining: validate actual GPU runs** on a machine with the ML stack (torch/unsloth/trl) —
 > especially multi-GPU and vision, which depend on the installed Unsloth version's support.
+> A **GPU validation harness** now exists for exactly this — `backend/validation/`
+> (`python -m validation.gpu_validate preflight | run [--all] | selftest`). It drives the
+> real `run_service → gpu_worker → runner` path for every method on a tiny model + few steps
+> and asserts completion, real step-based progress, live loss, and saved artifacts. The
+> torch-free `selftest` (payload→config mapping, fixtures, validators) passes off-GPU today;
+> `run` is what you execute on the GPU box to close out Phases 5–7. See
+> `backend/validation/README.md`.
 >
 > **Design principle (per user):** every setting must be user-tunable from the frontend over
 > time. The seam is the free-form `hyperparameters` dict — see the Hyperparameter Contract
