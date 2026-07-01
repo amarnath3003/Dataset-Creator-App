@@ -35,19 +35,40 @@ python -m venv .venv
 .venv\Scripts\activate
 # macOS/Linux:
 source .venv/bin/activate
+```
+
+**If you have an NVIDIA GPU** (this is the path that lets you actually train),
+install torch from PyTorch's own CUDA index **first** — plain `pip install -r
+requirements.txt` on its own silently gives you the CPU-only build even with a
+GPU present, no error, training just fails at launch:
+
+```bash
+# pick the tag matching your driver (cu121 / cu124 / cu126 / ...) — see
+# https://pytorch.org/get-started/locally/. cu124 works for most current drivers.
+pip install --index-url https://download.pytorch.org/whl/cu124 torch
+
+# verify BEFORE installing the rest:
+python -c "import torch; print(torch.cuda.is_available(), torch.__version__)"
+# expect: True 2.x.x+cu124
 
 pip install -r requirements.txt
 ```
 
-> **Heads-up on the ML stack.** `requirements.txt` includes `torch`, `unsloth`,
-> `trl`, `bitsandbytes`, etc. These are large and GPU/OS-specific.
-> - On a **GPU box**, install the CUDA build of PyTorch first
->   (see https://pytorch.org/get-started/locally/), then `pip install unsloth`
->   (see https://github.com/unslothai/unsloth#installation).
-> - On a **laptop with no GPU** you can still boot the API and drive the whole UI —
->   the training stack is imported lazily and only needed at "Launch". Install just
->   the light deps if you only want to explore:
->   `pip install fastapi uvicorn python-multipart pydantic`.
+Installing torch first works because `requirements.txt` lists `torch` unpinned —
+once a torch build is already installed, pip treats the requirement as satisfied
+and won't swap it back to the CPU wheel. (If you ever need to force a change:
+`pip install --index-url ... torch --force-reinstall`.)
+
+Then `pip install unsloth` may print extra guidance for your CUDA/torch
+combination — follow it if it asks for a specific extra (see
+https://github.com/unslothai/unsloth#installation).
+
+**No GPU / just exploring the UI?** The training stack is imported lazily and
+only touched at "Launch" — everything else (dataset upload, model registry,
+wizard, run history) works fine without it:
+```bash
+pip install fastapi uvicorn python-multipart pydantic
+```
 
 ### Frontend
 
@@ -172,6 +193,7 @@ finetune-lab/backend/storage/
 | `Form data requires "python-multipart"` on API boot | `pip install python-multipart` (it's in requirements — you likely booted a different interpreter). |
 | Frontend loads but every call fails / CORS | Backend not running on `:8000`, or set `VITE_API_URL`. CORS is already open (`*`). |
 | Hardware step shows "Reference GPUs" | No CUDA GPU detected. UI + estimates still work; actual training needs a real GPU. |
+| `torch.cuda.is_available()` is `False` **despite having an NVIDIA GPU** | You have the CPU-only torch wheel, not a driver/hardware problem — check with `nvidia-smi` (confirms driver + GPU are fine) then `pip show torch` (if the version has no `+cuXXX` suffix, it's CPU-only). Fix: `pip install --index-url https://download.pytorch.org/whl/cu124 torch --force-reinstall`, matching the cu-tag to your driver. See §2. |
 | Launch → run immediately **failed**, log mentions `unsloth`/`torch` | The ML training stack isn't installed in the backend's Python env. Install torch (CUDA) + unsloth on the GPU box. |
 | OOM during training | The runner auto-retries with lighter settings (visible in the log). Or lower batch/seq length, enable QLoRA/4-bit. |
 | Multi-GPU run fails to launch | Needs `accelerate` installed and >1 CUDA GPU; single-GPU always works. |

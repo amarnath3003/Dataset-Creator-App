@@ -1,14 +1,29 @@
+# --- ML / GPU stack ------------------------------------------------------
+# `pip install -r requirements.txt` alone gives you the CPU-only build of
+# torch from PyPI (silently — no error, just no CUDA). Install torch FIRST
+# from PyTorch's own index so pip resolves the CUDA build, THEN install the
+# rest of this file (torch will already satisfy the unpinned requirement
+# below and won't be swapped back to CPU):
+#
+#   pip install --index-url https://download.pytorch.org/whl/cu124 torch
+#   pip install -r requirements.txt
+#
+# Match the CUDA tag (cu121 / cu124 / cu126 / ...) to your GPU driver — see
+# https://pytorch.org/get-started/locally/. Verify afterward with:
+#   python -c "import torch; print(torch.cuda.is_available(), torch.__version__)"
+torch
+unsloth
+trl
+datasets
+peft
+accelerate
+bitsandbytes
+
+# --- Backend API -----------------------------------------------------------
 fastapi
 uvicorn
 python-multipart
 celery
-torch
-datasets
-trl
 transformers
-unsloth
 pydantic
 sqlalchemy
-peft
-accelerate
-bitsandbytes
