@@ -17,13 +17,8 @@ export default function ModelSelectionPage() {
   const [registryQuery, setRegistryQuery] = useState("");
   const [registryError, setRegistryError] = useState(null);
   const [registryLoading, setRegistryLoading] = useState(true);
-
   const [hfDropdownOpen, setHfDropdownOpen] = useState(false);
-  const { suggestions: hfSuggestions, loading: hfSearching } = useHfSearch(
-    source === "huggingface" ? hfModelId : "",
-    models.searchHf
-  );
-
+  const { suggestions: hfSuggestions, loading: hfSearching } = useHfSearch(source === "huggingface" ? hfModelId : "", models.searchHf);
   const localFileInputRef = useRef(null);
   const [uploadingModel, setUploadingModel] = useState(false);
   const [uploadError, setUploadError] = useState(null);
@@ -39,11 +34,7 @@ export default function ModelSelectionPage() {
   const filteredRegistryModels = registryModels.filter((m) => {
     const q = registryQuery.trim().toLowerCase();
     if (!q) return true;
-    return (
-      m.name.toLowerCase().includes(q) ||
-      m.id.toLowerCase().includes(q) ||
-      (m.family || "").toLowerCase().includes(q)
-    );
+    return m.name.toLowerCase().includes(q) || m.id.toLowerCase().includes(q) || (m.family || "").toLowerCase().includes(q);
   });
 
   const handleLocalUpload = async (fileList) => {
@@ -89,7 +80,6 @@ export default function ModelSelectionPage() {
           <span>Choose a base model from the registry, Hugging Face, or a local path.</span>
         </div>
 
-        {/* Source Toggle */}
         <div className="flex bg-neu-dark p-1.5 rounded-[22px] shadow-[var(--sh-trough)] max-w-xl w-full border border-black/50">
           {[
             { id: "registry", label: "Registry", Icon: Database },
@@ -101,7 +91,9 @@ export default function ModelSelectionPage() {
               <button
                 key={tab.id}
                 onClick={() => setSource(tab.id)}
-                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-xs font-bold tracking-widest uppercase transition-all duration-300 ${source === tab.id ? "bg-neu-base text-neu-accent shadow-[var(--sh-flat)]" : "text-neu-dim hover:text-neu-text"}`}
+                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-xs font-bold tracking-widest uppercase transition-all duration-300 ${
+                  source === tab.id ? "bg-neu-base text-neu-accent shadow-[var(--sh-flat)]" : "text-neu-dim hover:text-neu-text"
+                }`}
               >
                 <TabIcon size={16} />
                 {tab.label}
@@ -123,66 +115,76 @@ export default function ModelSelectionPage() {
                   type="text"
                   value={registryQuery}
                   onChange={(e) => setRegistryQuery(e.target.value)}
-                  placeholder="Search registry models…"
+                  placeholder="Search registry models..."
                   className="neu-input bg-transparent shadow-none pl-10"
                 />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredRegistryModels.map((model) => {
-                const isVision = model.modality === "vision" || (model.supports || []).includes("vision");
-                return (
-                  <div
-                    key={model.id}
-                    onClick={() => setSelectedRegistryId(model.id)}
-                    className={`neu-plate p-6 rounded-2xl cursor-pointer transition-all duration-300 border-2 ${selectedRegistryId === model.id ? "border-neu-accent shadow-[0_0_20px_rgba(255,107,0,0.15)]" : "border-transparent hover:border-neu-dim/20"}`}
-                  >
-                    <div className="flex justify-between items-start mb-2">
-                      <h3 className="text-neu-text font-bold text-lg">{model.name}</h3>
-                      <span className="text-[10px] uppercase tracking-wider font-bold bg-neu-dark px-2 py-1 rounded-md text-neu-accent">{model.parameters}</span>
-                    </div>
-                    <p className="text-neu-dim text-xs mb-3 font-mono break-all">{model.id}</p>
-                    <div className="flex flex-wrap gap-1.5 mb-3">
-                      {(model.supports || []).slice(0, 5).map((s) => (
-                        <span key={s} className="text-[9px] font-mono uppercase tracking-widest text-neu-dim/70 bg-neu-dark/60 px-1.5 py-0.5 rounded border border-white/5">
-                          {METHOD_LABEL[s] || s}
+                {filteredRegistryModels.map((model) => {
+                  const isSelected = selectedRegistryId === model.id;
+                  const isVision = model.modality === "vision" || (model.supports || []).includes("vision");
+                  return (
+                    <div
+                      key={model.id}
+                      onClick={() => setSelectedRegistryId(model.id)}
+                      className={`group relative cursor-pointer rounded-[22px] p-6 console-select-card ${
+                        isSelected ? "console-select-card-active border-black/40" : "border-white/5"
+                      }`}
+                    >
+                      <div
+                        className={`absolute right-5 top-5 h-2 w-2 rounded-full transition-all duration-200 ${
+                          isSelected ? "bg-neu-accent shadow-[0_0_10px_rgba(255,107,0,1)]" : "bg-black/40 shadow-[inset_1px_1px_2px_#000]"
+                        }`}
+                      />
+                      <div className="flex justify-between items-start mb-2 gap-3">
+                        <h3 className={`pr-6 text-lg font-bold transition-colors duration-150 ${isSelected ? "text-neu-accent" : "text-neu-text group-hover:text-neu-accent"}`}>
+                          {model.name}
+                        </h3>
+                        <span className="text-[10px] uppercase tracking-wider font-bold bg-neu-dark px-2 py-1 rounded-md text-neu-accent">{model.parameters}</span>
+                      </div>
+                      <p className="text-neu-dim text-xs mb-3 font-mono break-all">{model.id}</p>
+                      <div className="flex flex-wrap gap-1.5 mb-3">
+                        {(model.supports || []).slice(0, 5).map((s) => (
+                          <span key={s} className="text-[9px] font-mono uppercase tracking-widest text-neu-dim/70 bg-neu-dark/60 px-1.5 py-0.5 rounded border border-white/5">
+                            {METHOD_LABEL[s] || s}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="flex flex-wrap gap-2 items-center">
+                        <span className="neu-badge neu-badge-accent flex items-center gap-1">
+                          {isVision ? <ImageIcon size={10} /> : <Type size={10} />}
+                          {isVision ? "Vision" : "Text"}
                         </span>
-                      ))}
+                        <span className="text-[10px] text-neu-dim/70 uppercase tracking-widest bg-neu-dark/50 px-2 py-1 rounded-md border border-white/5">VRAM {model.min_vram}GB+</span>
+                        <span className="text-[10px] text-neu-dim/70 uppercase tracking-widest bg-neu-dark/50 px-2 py-1 rounded-md border border-white/5">CTX {Math.round(model.context_length / 1024)}k</span>
+                      </div>
                     </div>
-                    <div className="flex flex-wrap gap-2 items-center">
-                      <span className="neu-badge neu-badge-accent flex items-center gap-1">
-                        {isVision ? <ImageIcon size={10} /> : <Type size={10} />}
-                        {isVision ? "Vision" : "Text"}
-                      </span>
-                      <span className="text-[10px] text-neu-dim/70 uppercase tracking-widest bg-neu-dark/50 px-2 py-1 rounded-md border border-white/5">VRAM {model.min_vram}GB+</span>
-                      <span className="text-[10px] text-neu-dim/70 uppercase tracking-widest bg-neu-dark/50 px-2 py-1 rounded-md border border-white/5">CTX {Math.round(model.context_length / 1024)}k</span>
-                    </div>
+                  );
+                })}
+                {registryError && (
+                  <div className="col-span-full text-center text-red-400 py-10">
+                    <Database size={32} className="mx-auto mb-4 opacity-50" />
+                    <p>{registryError}</p>
                   </div>
-                );
-              })}
-              {registryError && (
-                <div className="col-span-full text-center text-red-400 py-10">
-                  <Database size={32} className="mx-auto mb-4 opacity-50" />
-                  <p>{registryError}</p>
-                </div>
-              )}
-              {!registryError && registryLoading && (
-                <div className="col-span-full text-center text-neu-dim py-10">
-                  <Database size={32} className="mx-auto mb-4 opacity-50" />
-                  <p>Loading model registry…</p>
-                </div>
-              )}
-              {!registryError && !registryLoading && registryModels.length === 0 && (
-                <div className="col-span-full text-center text-neu-dim py-10">
-                  <Database size={32} className="mx-auto mb-4 opacity-50" />
-                  <p>Model registry is empty.</p>
-                </div>
-              )}
-              {!registryError && registryModels.length > 0 && filteredRegistryModels.length === 0 && (
-                <div className="col-span-full text-center text-neu-dim py-10">
-                  <Search size={32} className="mx-auto mb-4 opacity-50" />
-                  <p>No registry models match "{registryQuery}".</p>
-                </div>
-              )}
+                )}
+                {!registryError && registryLoading && (
+                  <div className="col-span-full text-center text-neu-dim py-10">
+                    <Database size={32} className="mx-auto mb-4 opacity-50" />
+                    <p>Loading model registry...</p>
+                  </div>
+                )}
+                {!registryError && !registryLoading && registryModels.length === 0 && (
+                  <div className="col-span-full text-center text-neu-dim py-10">
+                    <Database size={32} className="mx-auto mb-4 opacity-50" />
+                    <p>Model registry is empty.</p>
+                  </div>
+                )}
+                {!registryError && registryModels.length > 0 && filteredRegistryModels.length === 0 && (
+                  <div className="col-span-full text-center text-neu-dim py-10">
+                    <Search size={32} className="mx-auto mb-4 opacity-50" />
+                    <p>No registry models match "{registryQuery}".</p>
+                  </div>
+                )}
               </div>
             </div>
           ) : source === "huggingface" ? (
@@ -201,9 +203,7 @@ export default function ModelSelectionPage() {
                   placeholder="unsloth/llama-3-8b-Instruct-bnb-4bit"
                   className="neu-input bg-transparent shadow-none pl-14 h-16 text-lg placeholder:text-neu-dim/30 focus:text-neu-accent outline-none"
                 />
-                {hfSearching && (
-                  <Loader2 size={18} className="animate-spin absolute right-5 top-1/2 -translate-y-1/2 text-neu-dim" />
-                )}
+                {hfSearching && <Loader2 size={18} className="animate-spin absolute right-5 top-1/2 -translate-y-1/2 text-neu-dim" />}
                 {hfDropdownOpen && hfSuggestions.length > 0 && (
                   <div className="absolute z-20 top-full mt-2 w-full neu-plate rounded-xl overflow-hidden border border-white/5 max-h-72 overflow-y-auto shadow-lg">
                     {hfSuggestions.map((s) => (
@@ -218,9 +218,7 @@ export default function ModelSelectionPage() {
                         className="w-full text-left px-5 py-3 text-sm font-mono text-neu-dim hover:bg-neu-dark hover:text-neu-accent transition-colors flex justify-between items-center gap-3"
                       >
                         <span className="truncate">{s.id}</span>
-                        {s.downloads != null && (
-                          <span className="text-[10px] text-neu-dim/50 shrink-0">{s.downloads.toLocaleString()} DL</span>
-                        )}
+                        {s.downloads != null && <span className="text-[10px] text-neu-dim/50 shrink-0">{s.downloads.toLocaleString()} DL</span>}
                       </button>
                     ))}
                   </div>
@@ -255,9 +253,7 @@ export default function ModelSelectionPage() {
                 className="neu-trough p-4 flex items-center justify-center gap-3 border-2 border-dashed border-white/5 hover:border-neu-dim/20 cursor-pointer transition-colors rounded-xl text-neu-dim hover:text-neu-text"
               >
                 {uploadingModel ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-                <span className="text-xs font-mono uppercase tracking-widest">
-                  {uploadingModel ? "Uploading model…" : "Browse Local Model Folder"}
-                </span>
+                <span className="text-xs font-mono uppercase tracking-widest">{uploadingModel ? "Uploading model..." : "Browse Local Model Folder"}</span>
               </button>
               {uploadError && <p className="text-xs text-red-400 font-mono">{uploadError}</p>}
               <p className="text-xs font-mono text-neu-dim/60">
@@ -268,13 +264,7 @@ export default function ModelSelectionPage() {
         </div>
 
         <div className="flex justify-end pt-4 border-t border-white/5 mt-4">
-          <Button
-            onClick={proceed}
-            variant="primary"
-            size="lg"
-            disabled={!isValid}
-            className={!isValid ? "opacity-50 cursor-not-allowed" : ""}
-          >
+          <Button onClick={proceed} variant="primary" size="lg" disabled={!isValid} className={`min-w-[208px] ${!isValid ? "opacity-50 cursor-not-allowed" : ""}`}>
             Next: Select Dataset
           </Button>
         </div>
