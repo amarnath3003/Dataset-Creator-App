@@ -75,7 +75,7 @@ export default function HardwareSelectionPage() {
   }, [modelData, trainingConfig, selectedGpu, numGpus]);
 
   return (
-    <div className="neu-section max-w-4xl mx-auto">
+    <div className="neu-section w-full">
       <div className="neu-section-header">
         <h2 className="flex items-center gap-2 text-neu-text font-bold">
           <Cpu size={18} className="text-neu-dim" />
@@ -85,6 +85,11 @@ export default function HardwareSelectionPage() {
       </div>
 
       <div className="neu-section-body space-y-8">
+        <div className="flex flex-wrap items-center gap-3 text-[10px] font-mono uppercase tracking-widest text-neu-dim">
+          <span className="neu-badge neu-badge-accent">Step 4</span>
+          <span>Pick the runtime target and check the fit estimate before launch.</span>
+        </div>
+
         {/* GPU selection */}
         <div className="space-y-4">
           <h3 className="text-sm font-bold text-neu-text tracking-widest uppercase flex items-center gap-2">

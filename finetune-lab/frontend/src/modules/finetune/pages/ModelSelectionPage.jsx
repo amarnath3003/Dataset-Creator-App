@@ -74,7 +74,7 @@ export default function ModelSelectionPage() {
   };
 
   return (
-    <div className="neu-section max-w-4xl mx-auto">
+    <div className="neu-section w-full">
       <div className="neu-section-header">
         <h2 className="flex items-center gap-2 text-neu-text font-bold">
           <Server size={18} className="text-neu-dim" />
@@ -84,7 +84,10 @@ export default function ModelSelectionPage() {
       </div>
 
       <div className="neu-section-body flex flex-col gap-8">
-        <p className="text-neu-dim text-sm">Select a base model from the registry, Hugging Face, or upload a local file.</p>
+        <div className="flex flex-wrap items-center gap-3 text-[10px] font-mono uppercase tracking-widest text-neu-dim">
+          <span className="neu-badge neu-badge-accent">Step 1</span>
+          <span>Choose a base model from the registry, Hugging Face, or a local path.</span>
+        </div>
 
         {/* Source Toggle */}
         <div className="flex bg-neu-dark p-1.5 rounded-[22px] shadow-[var(--sh-trough)] max-w-xl w-full border border-black/50">

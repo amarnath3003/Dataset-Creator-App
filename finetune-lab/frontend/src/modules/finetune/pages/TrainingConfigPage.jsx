@@ -96,7 +96,7 @@ export default function TrainingConfigPage() {
   const effBatch = (config.batch_size || 1) * (config.gradient_accumulation || 1);
 
   return (
-    <div className="neu-section max-w-4xl mx-auto">
+    <div className="neu-section w-full">
       <div className="neu-section-header">
         <h2 className="flex items-center gap-2 text-neu-text font-bold">
           <Settings size={18} className="text-neu-dim" />
@@ -106,6 +106,11 @@ export default function TrainingConfigPage() {
       </div>
 
       <div className="neu-section-body space-y-8">
+        <div className="flex flex-wrap items-center gap-3 text-[10px] font-mono uppercase tracking-widest text-neu-dim">
+          <span className="neu-badge neu-badge-accent">Step 3</span>
+          <span>Tune the training method, optimizer, and adapter profile.</span>
+        </div>
+
         {/* Smart Config banner */}
         <div className="neu-plate p-4 rounded-2xl flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">

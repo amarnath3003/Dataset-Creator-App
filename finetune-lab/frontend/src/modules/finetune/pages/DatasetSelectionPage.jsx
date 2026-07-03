@@ -103,7 +103,7 @@ export default function DatasetSelectionPage() {
   };
 
   return (
-    <div className="neu-section max-w-4xl mx-auto">
+    <div className="neu-section w-full">
       <div className="neu-section-header">
         <h2 className="flex items-center gap-2 text-neu-text font-bold">
           <Database size={18} className="text-neu-dim" />
@@ -113,9 +113,10 @@ export default function DatasetSelectionPage() {
       </div>
 
       <div className="neu-section-body flex flex-col gap-8">
-        <p className="text-neu-dim text-sm">
-          Select a dataset generated from Dataset Lab, or upload a new JSONL / JSON / CSV file.
-        </p>
+        <div className="flex flex-wrap items-center gap-3 text-[10px] font-mono uppercase tracking-widest text-neu-dim">
+          <span className="neu-badge neu-badge-accent">Step 2</span>
+          <span>Select a Dataset Lab export, a Hugging Face dataset, or upload a local file.</span>
+        </div>
 
         {error && (
           <div className="neu-alert-warn">

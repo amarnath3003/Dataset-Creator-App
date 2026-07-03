@@ -85,7 +85,7 @@ export default function ReviewPage() {
   };
 
   return (
-    <div className="neu-section max-w-4xl mx-auto">
+    <div className="neu-section w-full">
       <div className="neu-section-header">
         <h2 className="flex items-center gap-2 text-neu-text font-bold">
           <Rocket size={18} className="text-neu-dim" /> Review &amp; Launch
@@ -94,6 +94,11 @@ export default function ReviewPage() {
       </div>
 
       <div className="neu-section-body space-y-6">
+        <div className="flex flex-wrap items-center gap-3 text-[10px] font-mono uppercase tracking-widest text-neu-dim">
+          <span className="neu-badge neu-badge-accent">Step 5</span>
+          <span>Verify the payload, then launch the run into the training queue.</span>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <SummaryCard icon={Server} title="Model">
             <div className="text-neu-text font-bold">{modelData?.name || modelId || "—"}</div>
