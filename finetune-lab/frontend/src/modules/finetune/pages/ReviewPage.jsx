@@ -6,8 +6,6 @@ import { training } from "../services/finetuneApi";
 import { useWizard } from "../context/WizardContext";
 import { METHOD_LABEL } from "../lib/format";
 
-// Only forward hyperparameters relevant to the chosen method, so the payload
-// stays clean (the backend reads keys defensively regardless).
 function relevantHyperparams(cfg) {
   const base = {
     epochs: cfg.epochs,
@@ -32,7 +30,6 @@ function relevantHyperparams(cfg) {
       use_rslora: cfg.use_rslora,
     });
   }
-  // 4-bit-base methods only — mirrors gpu_worker.py's FOUR_BIT_METHODS / quant_for.
   if (["sft", "qlora", "cpt", "vision"].includes(t)) base.use_loftq = cfg.use_loftq;
   if (t === "cpt") {
     Object.assign(base, {
@@ -101,26 +98,25 @@ export default function ReviewPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <SummaryCard icon={Server} title="Model">
-            <div className="text-neu-text font-bold">{modelData?.name || modelId || "—"}</div>
+            <div className="text-neu-text font-bold">{modelData?.name || modelId || "-"}</div>
             <div className="text-[11px] font-mono text-neu-dim break-all">{modelId}</div>
           </SummaryCard>
           <SummaryCard icon={Database} title="Dataset">
-            <div className="text-neu-text font-bold break-all">{datasetName || "—"}</div>
+            <div className="text-neu-text font-bold break-all">{datasetName || "-"}</div>
             <div className="text-[11px] font-mono text-neu-dim uppercase tracking-widest">{datasetFormat || ""}</div>
           </SummaryCard>
           <SummaryCard icon={Settings} title="Method">
             <div className="text-neu-text font-bold uppercase">{METHOD_LABEL[trainingConfig.training_type] || trainingConfig.training_type}</div>
             <div className="text-[11px] font-mono text-neu-dim">
-              eff. batch {trainingConfig.batch_size * trainingConfig.gradient_accumulation} · {trainingConfig.epochs} epochs
+              eff. batch {trainingConfig.batch_size * trainingConfig.gradient_accumulation} - {trainingConfig.epochs} epochs
             </div>
           </SummaryCard>
           <SummaryCard icon={Cpu} title="Hardware">
             <div className="text-neu-text font-bold">{draft.selectedGpuName || "Server GPU"}</div>
-            <div className="text-[11px] font-mono text-neu-dim">{numGpus > 1 ? `${numGpus} GPUs · DDP` : "single GPU"}</div>
+            <div className="text-[11px] font-mono text-neu-dim">{numGpus > 1 ? `${numGpus} GPUs - DDP` : "single GPU"}</div>
           </SummaryCard>
         </div>
 
-        {/* Full hyperparameter table */}
         <div className="neu-plate p-5 rounded-2xl">
           <div className="text-[10px] font-bold text-neu-dim uppercase tracking-widest mb-3">Hyperparameters</div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-2">
@@ -136,20 +132,24 @@ export default function ReviewPage() {
         {(error || missing) && (
           <div className="neu-alert-warn">
             <AlertTriangle size={16} />
-            <span>{error || "Missing model or dataset — go back and complete the earlier steps."}</span>
+            <span>{error || "Missing model or dataset - go back and complete the earlier steps."}</span>
           </div>
         )}
 
-        <div className="flex justify-between items-center pt-6 border-t border-white/5">
-          <Button onClick={() => navigate("/finetune/new/hardware")} variant="outline" size="lg">Back</Button>
-          <button
+        <div className="flex justify-between items-center gap-3 pt-6 border-t border-white/5">
+          <Button onClick={() => navigate("/finetune/new/hardware")} variant="outline" size="lg" className="min-w-[152px]">
+            Back
+          </Button>
+          <Button
             onClick={launch}
+            variant="primary"
+            size="lg"
             disabled={submitting || missing}
-            className={`neu-btn-primary px-8 py-3 flex items-center gap-2 font-bold uppercase tracking-widest text-sm rounded-[24px] ${submitting || missing ? "opacity-50 cursor-not-allowed" : ""}`}
+            className={`min-w-[248px] gap-2 ${submitting || missing ? "opacity-50 cursor-not-allowed" : ""}`}
           >
             <Play size={16} fill="currentColor" />
-            {submitting ? "Initializing…" : "Launch Training Run"}
-          </button>
+            {submitting ? "Initializing..." : "Launch Training Run"}
+          </Button>
         </div>
       </div>
     </div>
