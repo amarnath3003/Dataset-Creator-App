@@ -4,6 +4,7 @@ import { Plus, Activity, CheckCircle2, Cpu, ArrowRight, Layers, Zap, WifiOff } f
 import { training, hardware } from "../services/finetuneApi";
 import { useWizard } from "../context/WizardContext";
 import { statusMeta, fmtTime, shortId, METHOD_LABEL } from "../lib/format";
+import { ConsoleSection, EmptyPanel, MetricCard, PageHero } from "../components/ConsolePage";
 
 export default function DashboardPage() {
   const navigate = useNavigate();
@@ -17,9 +18,6 @@ export default function DashboardPage() {
     try {
       const [r, g] = await Promise.all([
         training.listRuns().catch(() => []),
-        // Never reject: on network failure resolve a sentinel so we can tell
-        // "backend unreachable" apart from "backend up, zero GPUs" — those
-        // used to render identically, which reads as a false "all clear".
         hardware.gpus().catch((err) => ({ __unreachable: err?.message || "Backend unreachable" })),
       ]);
       setRuns(Array.isArray(r) ? r : []);
@@ -50,138 +48,142 @@ export default function DashboardPage() {
     total: runs.length,
     running: runs.filter((r) => ["running", "queued", "cancelling"].includes(r.status)).length,
     completed: runs.filter((r) => r.status === "completed").length,
+    detectedGpuCount: hwError ? "—" : gpus ? gpus.count ?? 0 : "—",
   };
   const recent = runs.slice(0, 5);
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div className="flex items-end justify-between">
-        <div>
-          <h1 className="text-4xl font-light text-neu-text tracking-tight">Dashboard</h1>
-          <p className="text-neu-dim/60 font-mono text-[11px] uppercase tracking-[0.25em] mt-2">
-            Local fine-tuning studio
-          </p>
-        </div>
-        <button onClick={startNewRun} className="neu-btn-primary flex items-center gap-2 px-6 py-3 rounded-2xl font-bold uppercase tracking-widest text-xs">
-          <Plus size={16} /> New Run
-        </button>
-      </div>
+      <PageHero
+        title="Dashboard"
+        description="Local fine-tuning studio"
+        badge={
+          <span className="font-mono text-xs text-neu-accent tracking-widest font-bold uppercase">
+            {counts.running} active / {counts.total} total
+          </span>
+        }
+        actions={
+          <button
+            onClick={startNewRun}
+            className="group relative flex items-center justify-center gap-3 px-6 py-3 rounded-[18px] font-bold tracking-widest text-[12px] uppercase bg-neu-base text-neu-text shadow-[6px_6px_14px_#111315,-6px_-6px_14px_#2e343b] hover:shadow-[8px_8px_18px_#111315,-8px_-8px_18px_#2e343b] hover:-translate-y-0.5 border border-white/5 active:bg-neu-dark active:text-neu-accent active:shadow-[inset_4px_4px_10px_#0e1012,inset_-4px_-4px_10px_#272d33] active:border-black/40 active:scale-[0.98] transition-all"
+          >
+            <div className="flex items-center justify-center p-2 rounded-[12px] bg-[#15181b] text-neu-accent shadow-[inset_2px_2px_4px_#0e1012,inset_-2px_-2px_4px_#272d33,0_0_12px_rgba(255,107,0,0.15)] ring-1 ring-neu-accent/20 group-active:drop-shadow-[0_0_8px_rgba(255,107,0,0.8)] transition-all duration-150">
+              <Plus size={16} />
+            </div>
+            <span className="group-hover:text-neu-accent transition-colors">New Run</span>
+          </button>
+        }
+      />
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
-        <StatCard icon={Layers} label="Total Runs" value={counts.total} />
-        <StatCard icon={Activity} label="Active" value={counts.running} accent />
-        <StatCard icon={CheckCircle2} label="Completed" value={counts.completed} />
-        <StatCard
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
+        <MetricCard icon={Layers} label="Total Runs" value={counts.total} hint="All jobs recorded locally" />
+        <MetricCard icon={Activity} label="Active" value={counts.running} hint="Queued, running, or stopping" accent />
+        <MetricCard icon={CheckCircle2} label="Completed" value={counts.completed} hint="Successful training runs" />
+        <MetricCard
           icon={Cpu}
           label="GPUs Detected"
-          value={hwError ? "—" : gpus ? gpus.count ?? 0 : "—"}
-          sub={hwError ? "backend unreachable" : gpus?.cuda ? "CUDA ready" : "CPU / none"}
+          value={counts.detectedGpuCount}
+          hint={hwError ? "Backend unreachable" : gpus?.cuda ? "CUDA ready" : "CPU / none"}
+          accent={Boolean(gpus?.cuda) && !hwError}
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Recent runs */}
-        <div className="lg:col-span-2 neu-section">
-          <div className="neu-section-header">
-            <h2 className="flex items-center gap-2 text-neu-text font-bold">
-              <Activity size={18} className="text-neu-dim" /> Recent Runs
-            </h2>
+      <div className="grid grid-cols-1 xl:grid-cols-[1.8fr_1fr] gap-6">
+        <ConsoleSection
+          title="Recent Runs"
+          icon={Activity}
+          badge={loading ? "Syncing queue" : `${recent.length} visible`}
+          action={
             <Link to="/finetune/runs" className="text-[11px] font-mono uppercase tracking-widest text-neu-accent no-underline flex items-center gap-1">
               All runs <ArrowRight size={12} />
             </Link>
-          </div>
-          <div className="neu-section-body">
-            {loading ? (
-              <p className="text-neu-dim text-sm py-8 text-center">Loading…</p>
-            ) : recent.length === 0 ? (
-              <div className="text-center py-12 space-y-4">
-                <Zap size={28} className="mx-auto text-neu-dim/40" />
-                <p className="text-neu-dim text-sm">No runs yet.</p>
+          }
+        >
+          {loading ? (
+            <p className="text-neu-dim text-sm py-8 text-center">Loading...</p>
+          ) : recent.length === 0 ? (
+            <EmptyPanel
+              icon={Zap}
+              title="No runs yet"
+              description="Start a new training run to populate this queue."
+              action={
                 <button onClick={startNewRun} className="neu-btn-primary px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest">
-                  Start your first run
+                  Start first run
                 </button>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {recent.map((r) => {
-                  const m = statusMeta(r.status);
-                  return (
-                    <Link
-                      key={r.job_id}
-                      to={`/finetune/runs/${r.job_id}`}
-                      className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl neu-plate no-underline hover:-translate-y-0.5 transition-transform"
-                    >
+              }
+            />
+          ) : (
+            <div className="flex flex-col gap-3">
+              {recent.map((r) => {
+                const m = statusMeta(r.status);
+                return (
+                  <Link
+                    key={r.job_id}
+                    to={`/finetune/runs/${r.job_id}`}
+                    className="neu-plate p-4 rounded-2xl no-underline group hover:-translate-y-0.5 transition-transform"
+                  >
+                    <div className="flex items-start justify-between gap-4">
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className={`led ${m.led}`} />
+                        <div className={`led ${m.led} shrink-0`} />
                         <div className="min-w-0">
                           <div className="text-sm font-bold text-neu-text truncate">
                             {r.model_name || "—"}
                           </div>
-                          <div className="text-[10px] font-mono text-neu-dim uppercase tracking-widest">
+                          <div className="text-[10px] font-mono text-neu-dim uppercase tracking-widest mt-1">
                             {METHOD_LABEL[r.training_type] || r.training_type} · {shortId(r.job_id)}
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-4 shrink-0">
-                        <span className={`neu-badge ${m.cls}`}>{m.label}</span>
-                        <span className="text-[10px] font-mono text-neu-dim hidden md:block">{fmtTime(r.created_at)}</span>
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
+                      <span className={`neu-badge ${m.cls}`}>{m.label}</span>
+                    </div>
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-[10px] font-mono uppercase tracking-widest">
+                      <span className="text-neu-dim">{fmtTime(r.created_at)}</span>
+                      <span className="text-neu-dim/70">
+                        Progress {r.progress ?? 0}%
+                        {r.total_steps ? ` · ${r.step || 0}/${r.total_steps}` : ""}
+                      </span>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </ConsoleSection>
 
-        {/* Hardware panel */}
-        <div className="neu-section">
-          <div className="neu-section-header">
-            <h2 className="flex items-center gap-2 text-neu-text font-bold">
-              <Cpu size={18} className="text-neu-dim" /> Hardware
-            </h2>
-            <div className={`led ${hwError ? "led-red" : gpus?.cuda ? "led-green" : "led-off"}`} />
-          </div>
-          <div className="neu-section-body space-y-3">
-            {hwError ? (
-              <div className="neu-trough p-5 rounded-xl text-center text-red-400 text-xs flex flex-col items-center gap-2">
-                <WifiOff size={18} />
-                <span>Can't reach the backend — is it running on :8000?</span>
-                <span className="text-neu-dim/70 font-mono">{hwError}</span>
-              </div>
-            ) : gpus?.gpus?.filter((g) => g.vram_total > 0)?.length ? (
-              gpus.gpus
+        <ConsoleSection title="Hardware" icon={Cpu} badge={hwError ? "Backend offline" : "Runtime probe"}>
+          {hwError ? (
+            <div className="neu-trough p-5 rounded-xl text-center text-red-400 text-xs flex flex-col items-center gap-2">
+              <WifiOff size={18} />
+              <span>Cannot reach the backend on :8000.</span>
+              <span className="text-neu-dim/70 font-mono">{hwError}</span>
+            </div>
+          ) : gpus?.gpus?.filter((g) => g.vram_total > 0)?.length ? (
+            <div className="flex flex-col gap-3">
+              {gpus.gpus
                 .filter((g) => g.vram_total > 0)
                 .map((g) => (
-                  <div key={g.id} className="neu-plate p-4 rounded-xl">
-                    <div className="text-sm font-bold text-neu-text truncate">{g.name}</div>
-                    <div className="text-[10px] font-mono text-neu-dim uppercase tracking-widest mt-1">
-                      {(g.vram_total / 1024).toFixed(0)} GB VRAM
+                  <div key={g.id} className="neu-plate p-4 rounded-2xl">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-bold text-neu-text truncate">{g.name}</div>
+                        <div className="text-[10px] font-mono text-neu-dim uppercase tracking-widest mt-1">
+                          {(g.vram_total / 1024).toFixed(0)} GB VRAM
+                        </div>
+                      </div>
+                      <span className="neu-badge neu-badge-green">ready</span>
                     </div>
                   </div>
-                ))
-            ) : (
-              <div className="neu-trough p-5 rounded-xl text-center text-neu-dim text-xs">
-                No CUDA GPU detected. Training will fall back to CPU or whatever hardware the server actually has.
-              </div>
-            )}
-          </div>
-        </div>
+                ))}
+            </div>
+          ) : (
+            <EmptyPanel
+              icon={Cpu}
+              title="No CUDA GPU detected"
+              description="Training will fall back to CPU or whatever hardware the backend exposes."
+            />
+          )}
+        </ConsoleSection>
       </div>
-    </div>
-  );
-}
-
-function StatCard({ icon, label, value, sub, accent }) {
-  const Icon = icon;
-  return (
-    <div className="neu-plate p-5 rounded-2xl flex flex-col gap-2">
-      <Icon size={18} className={accent ? "text-neu-accent" : "text-neu-dim"} />
-      <div className="text-3xl font-bold text-neu-text leading-none">{value}</div>
-      <div className="text-[10px] font-mono text-neu-dim uppercase tracking-widest">{label}</div>
-      {sub && <div className="text-[10px] text-neu-dim/60">{sub}</div>}
     </div>
   );
 }

@@ -1,14 +1,7 @@
 import { NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Plus, ListChecks, Boxes, PackageOpen, Settings, Layers } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useWizard } from "../modules/finetune/context/WizardContext";
-
-const NAV = [
-  { to: "/finetune/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/finetune/runs", label: "Runs", icon: ListChecks },
-  { to: "/finetune/models", label: "Models", icon: Boxes },
-  { to: "/finetune/exports", label: "Exports", icon: PackageOpen },
-  { to: "/finetune/settings", label: "Settings", icon: Settings },
-];
+import { NAV_ITEMS } from "../modules/finetune/lib/navigation";
 
 export default function Sidebar() {
   const navigate = useNavigate();
@@ -20,49 +13,89 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="w-64 shrink-0 min-h-screen p-5 flex flex-col gap-8 border-r border-white/5 sticky top-0 self-start">
-      {/* Brand */}
-      <div className="flex items-center gap-3 px-2">
-        <div className="w-11 h-11 rounded-2xl neu-plate flex items-center justify-center text-neu-accent shadow-[0_0_15px_rgba(255,107,0,0.15)]">
-          <Layers size={22} />
-        </div>
-        <div>
-          <h1 className="text-lg font-bold text-neu-text tracking-tight leading-none">Finetune Lab</h1>
-          <span className="text-[10px] text-neu-dim font-mono uppercase tracking-[0.2em]">LLM Studio</span>
-        </div>
-      </div>
-
-      {/* Primary CTA */}
+    <aside className="lg:w-56 shrink-0 flex lg:flex-col gap-3 overflow-x-auto lg:overflow-visible pb-1 lg:pb-0">
       <button
         onClick={startNewRun}
-        className="neu-btn-primary flex items-center justify-center gap-2 py-3 rounded-2xl font-bold uppercase tracking-widest text-xs"
+        className="group relative min-w-[180px] lg:min-w-0 flex items-center gap-4 px-5 py-4 rounded-[20px] text-left outline-none shrink-0 touch-manipulation select-none overflow-hidden bg-neu-base text-neu-text shadow-[6px_6px_14px_#111315,-6px_-6px_14px_#2e343b] hover:shadow-[8px_8px_18px_#111315,-8px_-8px_18px_#2e343b] hover:-translate-y-0.5 border border-white/5 active:bg-neu-dark active:text-neu-accent active:shadow-[inset_4px_4px_10px_#0e1012,inset_-4px_-4px_10px_#272d33] active:border-black/40 active:scale-[0.98] transition-all"
       >
-        <Plus size={16} /> New Run
+        <div className="flex-shrink-0 p-2.5 rounded-[12px] bg-[#15181b] text-neu-accent shadow-[inset_2px_2px_4px_#0e1012,inset_-2px_-2px_4px_#272d33,0_0_12px_rgba(255,107,0,0.15)] ring-1 ring-neu-accent/20 group-active:drop-shadow-[0_0_8px_rgba(255,107,0,0.8)] transition-all duration-150">
+          <Plus size={18} />
+        </div>
+        <div className="flex-1 min-w-0 pr-4">
+          <span className="text-[13px] font-bold tracking-wide block truncate group-hover:text-neu-accent transition-colors duration-150">
+            New Run
+          </span>
+          <span className="text-[10px] font-mono uppercase tracking-widest text-neu-dim/70">
+            Launch pipeline
+          </span>
+        </div>
+        <div className="absolute right-5 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-neu-accent shadow-[0_0_10px_rgba(255,107,0,1)]" />
       </button>
 
-      {/* Nav */}
-      <nav className="flex flex-col gap-1.5">
-        {NAV.map((item) => (
+      <nav className="flex lg:flex-col gap-3">
+        {NAV_ITEMS.map((item) => (
           <NavLink
-            key={item.to}
+            key={item.key}
             to={item.to}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium no-underline transition-all duration-200 ${
+              `relative min-w-[180px] lg:min-w-0 group flex items-center gap-4 px-5 py-4 rounded-[20px] text-left outline-none shrink-0 touch-manipulation select-none overflow-hidden no-underline ${
                 isActive
-                  ? "neu-inset text-neu-accent"
-                  : "text-neu-dim hover:text-neu-text hover:bg-white/5"
+                  ? "bg-neu-dark text-neu-accent shadow-[inset_4px_4px_10px_#0e1012,inset_-4px_-4px_10px_#272d33] border border-black/40 scale-[0.98]"
+                  : "bg-neu-base text-neu-dim shadow-[6px_6px_14px_#111315,-6px_-6px_14px_#2e343b] hover:shadow-[8px_8px_18px_#111315,-8px_-8px_18px_#2e343b] hover:-translate-y-0.5 border border-white/5"
               }`
             }
           >
-            <item.icon size={18} />
-            {item.label}
+            {({ isActive }) => (
+              <>
+                <div
+                  className={`flex-shrink-0 p-2.5 rounded-[12px] transition-all duration-150 ${
+                    isActive
+                      ? "bg-[#15181b] shadow-[inset_2px_2px_4px_#0e1012,inset_-2px_-2px_4px_#272d33,0_0_12px_rgba(255,107,0,0.15)] ring-1 ring-neu-accent/20"
+                      : "bg-neu-base shadow-[3px_3px_6px_#111315,-3px_-3px_6px_#2e343b]"
+                  }`}
+                >
+                  <item.icon
+                    size={18}
+                    strokeWidth={isActive ? 2 : 1.5}
+                    className={isActive ? "text-neu-accent drop-shadow-[0_0_8px_rgba(255,107,0,0.8)]" : "text-neu-dim"}
+                  />
+                </div>
+
+                <div className="flex-1 min-w-0 pr-4">
+                  <span
+                    className={`text-[13px] font-bold tracking-wide block truncate transition-colors duration-150 ${
+                      isActive ? "text-neu-accent drop-shadow-[0_0_8px_rgba(255,107,0,0.35)]" : "text-neu-text"
+                    }`}
+                  >
+                    {item.label}
+                  </span>
+                  <span className="text-[10px] font-mono uppercase tracking-widest text-neu-dim/70">
+                    {item.shortLabel}
+                  </span>
+                </div>
+
+                <div
+                  className={`absolute right-5 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full transition-all duration-200 ${
+                    isActive
+                      ? "bg-neu-accent shadow-[0_0_10px_rgba(255,107,0,1)]"
+                      : "bg-black/40 shadow-[inset_1px_1px_2px_#000]"
+                  }`}
+                />
+              </>
+            )}
           </NavLink>
         ))}
       </nav>
 
-      <div className="mt-auto px-2">
-        <div className="neu-trough rounded-xl p-3 text-[10px] font-mono text-neu-dim/60 uppercase tracking-widest">
-          Local-first · single GPU
+      <div className="hidden lg:block mt-auto">
+        <div className="neu-trough rounded-[20px] p-4 text-[10px] font-mono uppercase tracking-widest">
+          <div className="flex items-center gap-2 text-neu-accent mb-2">
+            <div className="led led-on" />
+            Local-first
+          </div>
+          <div className="text-neu-dim/70 leading-relaxed">
+            Dataset Lab framing, one control rail, and a consistent training surface across every page.
+          </div>
         </div>
       </div>
     </aside>
