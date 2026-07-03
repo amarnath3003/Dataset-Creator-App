@@ -6,6 +6,8 @@ happens later in the training worker.
 """
 import csv
 import json
+import urllib.parse
+import urllib.request
 import uuid
 from pathlib import Path
 from typing import Any
@@ -16,6 +18,8 @@ from config import DATASETS_DIR, ensure_dirs
 from core.dataset_engine.detector import DatasetDetector
 
 router = APIRouter()
+
+HF_API = "https://huggingface.co/api"
 
 SUPPORTED = {".jsonl", ".json", ".csv", ".parquet"}
 PREVIEW_ROWS = 3
@@ -35,17 +39,18 @@ def _inspect(path: Path) -> dict[str, Any]:
                 line = line.strip()
                 if not line:
                     continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(obj, dict):
+                    continue
                 count += 1
                 if count <= PREVIEW_ROWS:
-                    try:
-                        obj = json.loads(line)
-                        if isinstance(obj, dict):
-                            preview.append(obj)
-                            for k in obj.keys():
-                                if k not in columns:
-                                    columns.append(k)
-                    except json.JSONDecodeError:
-                        pass
+                    preview.append(obj)
+                    for k in obj.keys():
+                        if k not in columns:
+                            columns.append(k)
         rows = count
 
     elif suffix == ".json":
@@ -128,7 +133,7 @@ async def upload_dataset(file: UploadFile = File(...)):
         dest.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail=f"Could not parse dataset: {exc}")
 
-    if not meta["rows"]:
+    if meta["rows"] == 0:
         dest.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail="Dataset appears to be empty.")
 
@@ -141,9 +146,48 @@ async def upload_dataset(file: UploadFile = File(...)):
     }
 
 
+@router.get("/search/hf")
+def search_hf_datasets(q: str = "", limit: int = 8):
+    """Proxy Hugging Face Hub dataset search so the picker can show live suggestions while typing."""
+    query = q.strip()
+    if not query:
+        return []
+
+    params = urllib.parse.urlencode({"search": query, "limit": limit, "sort": "downloads", "direction": -1})
+    url = f"{HF_API}/datasets?{params}"
+    try:
+        with urllib.request.urlopen(url, timeout=6) as resp:
+            data = json.loads(resp.read())
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Hugging Face search failed: {exc}")
+
+    return [
+        {
+            "id": d.get("id"),
+            "downloads": d.get("downloads"),
+            "likes": d.get("likes"),
+        }
+        for d in data
+    ]
+
+
 @router.post("/validate")
 def validate_dataset(payload: dict):
-    path = Path(payload.get("path", ""))
-    if not path.exists():
+    raw = payload.get("path", "")
+    if not raw:
+        raise HTTPException(status_code=400, detail="A dataset path is required.")
+
+    ensure_dirs()
+    path = Path(raw).resolve()
+    datasets_root = DATASETS_DIR.resolve()
+    if path != datasets_root and datasets_root not in path.parents:
+        # CORS is wide open (`*`) on this API, so any page the user's browser
+        # visits could otherwise POST an arbitrary absolute path here and read
+        # it back — restrict to the managed datasets directory.
+        raise HTTPException(status_code=403, detail="Path must be inside the datasets directory.")
+    if not path.is_file():
         raise HTTPException(status_code=404, detail="Dataset not found.")
+    if path.suffix.lower() not in SUPPORTED:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type '{path.suffix}'.")
+
     return {"status": "valid", **_inspect(path)}

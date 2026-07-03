@@ -32,7 +32,8 @@ function relevantHyperparams(cfg) {
       use_rslora: cfg.use_rslora,
     });
   }
-  if (["sft", "qlora"].includes(t)) base.use_loftq = cfg.use_loftq;
+  // 4-bit-base methods only — mirrors gpu_worker.py's FOUR_BIT_METHODS / quant_for.
+  if (["sft", "qlora", "cpt", "vision"].includes(t)) base.use_loftq = cfg.use_loftq;
   if (t === "cpt") {
     Object.assign(base, {
       train_embeddings: cfg.train_embeddings,

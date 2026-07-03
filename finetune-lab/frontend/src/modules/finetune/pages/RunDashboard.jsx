@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import {
   Activity, ArrowLeft, Loader2, AlertCircle, CheckCircle2, Cpu, Clock, TrendingDown,
-  Square, Gauge, PackageOpen, Box, HardDrive, Cloud, FileArchive,
+  Square, Gauge, PackageOpen, Box, HardDrive, Cloud, FileArchive, Save,
 } from "lucide-react";
 import { training, exports as exportApi } from "../services/finetuneApi";
 import { useSettings } from "../context/SettingsContext";
@@ -14,6 +14,8 @@ export default function RunDashboard() {
   const [job, setJob] = useState(null);
   const [connError, setConnError] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [stopError, setStopError] = useState(null);
+  const [checkpoints, setCheckpoints] = useState(null);
   const terminalRef = useRef(null);
 
   const poll = useCallback(async () => {
@@ -47,11 +49,28 @@ export default function RunDashboard() {
     if (terminalRef.current) terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
   }, [job?.logs?.length]);
 
+  const loadCheckpoints = useCallback(async () => {
+    try {
+      setCheckpoints(await training.checkpoints(id));
+    } catch {
+      /* run may not exist yet on first mount tick — poll() surfaces that error */
+    }
+  }, [id]);
+
+  useEffect(() => {
+    loadCheckpoints();
+    const t = setInterval(loadCheckpoints, 5000);
+    return () => clearInterval(t);
+  }, [loadCheckpoints]);
+
   const onStop = async () => {
     setStopping(true);
+    setStopError(null);
     try {
       await training.stop(id);
       await poll();
+    } catch (err) {
+      setStopError(err.message || "Failed to stop the run.");
     } finally {
       setStopping(false);
     }
@@ -92,6 +111,7 @@ export default function RunDashboard() {
               <Square size={14} /> {status === "cancelling" ? "Stopping…" : stopping ? "…" : "Stop"}
             </button>
           )}
+          {stopError && <span className="text-[11px] text-red-400 font-mono">{stopError}</span>}
           <div className="neu-inset px-4 py-2 rounded-xl">
             <span className="font-mono text-xs text-neu-accent tracking-widest font-bold uppercase">RUN: {shortId(id)}</span>
           </div>
@@ -112,7 +132,7 @@ export default function RunDashboard() {
             <Stat value={<span className={`capitalize ${meta.text}`}>{meta.label}</span>} label="Status" />
             <Stat icon={TrendingDown} value={job.loss != null ? job.loss : "—"} label="Training Loss" />
             <Stat icon={Cpu} value={fmtVram(job.vram_mb)} label="Peak VRAM" />
-            <Stat icon={Clock} value={isDone ? "Done" : fmtEta(job.eta_seconds)} label="ETA" />
+            <Stat icon={Clock} value={isFailed ? "—" : isDone || isCancelled ? "Done" : fmtEta(job.eta_seconds)} label="ETA" />
           </div>
 
           {/* Progress */}
@@ -142,6 +162,25 @@ export default function RunDashboard() {
             {logs.length > 0 ? logs.join("\n") : `> Run ${id} created.\n> Waiting for the engine to emit telemetry…`}
           </div>
 
+          {/* Checkpoints */}
+          {checkpoints && (checkpoints.checkpoints.length > 0 || checkpoints.has_final) && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-[10px] font-bold text-neu-dim uppercase tracking-widest">
+                <Save size={12} className="text-neu-accent" /> Checkpoints
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {checkpoints.checkpoints.map((c) => (
+                  <span key={c.name} className="neu-badge neu-badge-accent font-mono text-[10px]">
+                    {c.name}
+                  </span>
+                ))}
+                {checkpoints.has_final && (
+                  <span className="neu-badge neu-badge-green font-mono text-[10px]">final</span>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Terminal states */}
           {(isDone || isCancelled) && (
             <div className="neu-alert-info flex items-start gap-2">
@@ -160,9 +199,21 @@ export default function RunDashboard() {
           )}
 
           {isFailed && job.error && (
-            <div className="neu-alert-warn mt-4">
-              <AlertCircle size={16} />
-              <span className="break-all">Engine Error: {job.error}</span>
+            <div className="neu-alert-warn mt-4 flex-col items-start">
+              <div className="flex items-center gap-2">
+                <AlertCircle size={16} />
+                <span className="break-all">Engine Error: {job.error}</span>
+              </div>
+              {job.traceback && (
+                <details className="mt-2 w-full">
+                  <summary className="text-[10px] font-mono text-neu-dim uppercase tracking-widest cursor-pointer">
+                    Traceback
+                  </summary>
+                  <pre className="mt-2 text-[10px] font-mono text-neu-dim whitespace-pre-wrap break-all max-h-64 overflow-y-auto">
+                    {job.traceback}
+                  </pre>
+                </details>
+              )}
             </div>
           )}
 

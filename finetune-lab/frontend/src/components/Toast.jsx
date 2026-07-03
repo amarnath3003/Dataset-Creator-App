@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import { CheckCircle, AlertCircle, Info, AlertTriangle, X } from 'lucide-react';
 
 const ToastContext = createContext(null);
@@ -30,12 +30,14 @@ export const ToastProvider = ({ children }) => {
         }
     }, [removeToast]);
 
-    const toast = {
+    // Memoized so consumers can safely list `toast` in a useEffect dependency
+    // array without it forcing a re-run on every render.
+    const toast = useMemo(() => ({
         success: (msg, duration) => addToast(msg, 'success', duration),
         error: (msg, duration) => addToast(msg, 'error', duration),
         warn: (msg, duration) => addToast(msg, 'warn', duration),
         info: (msg, duration) => addToast(msg, 'info', duration),
-    };
+    }), [addToast]);
 
     return (
         <ToastContext.Provider value={toast}>

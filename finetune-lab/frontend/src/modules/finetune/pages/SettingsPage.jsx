@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Settings, KeyRound, Cloud, Check, Eye, EyeOff, Info } from "lucide-react";
 import { useSettings } from "../context/SettingsContext";
+import { Toggle } from "../../../components/Toggle";
 
 const GGUF_METHODS = ["q4_k_m", "q5_k_m", "q8_0", "f16"];
 
@@ -79,12 +80,7 @@ export default function SettingsPage() {
               <label className="text-sm font-bold text-neu-text">Push repos as private</label>
               <p className="text-[10px] text-neu-dim mt-1">New Hub repos default to private.</p>
             </div>
-            <button
-              onClick={() => set({ hubPrivate: !settings.hubPrivate })}
-              className={`w-12 h-6 rounded-full p-1 transition-colors ${settings.hubPrivate ? "bg-neu-accent" : "bg-neu-dark"}`}
-            >
-              <div className={`bg-white w-4 h-4 rounded-full transition-transform ${settings.hubPrivate ? "translate-x-6" : "translate-x-0"}`} />
-            </button>
+            <Toggle on={settings.hubPrivate} onClick={() => set({ hubPrivate: !settings.hubPrivate })} />
           </div>
         </div>
       </div>

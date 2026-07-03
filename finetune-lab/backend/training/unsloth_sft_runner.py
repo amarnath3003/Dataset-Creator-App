@@ -9,7 +9,7 @@ import time
 import traceback
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Optional, Protocol
+from typing import Any, Literal, Optional, Protocol
 
 # IMPORTANT: Unsloth MUST be imported before torch/trl/transformers/peft. It
 # patches bitsandbytes + those libraries at import time; importing them first

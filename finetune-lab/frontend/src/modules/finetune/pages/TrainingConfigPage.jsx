@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "../../../components/Button";
+import { Slider } from "../../../components/Slider";
+import { Toggle } from "../../../components/Toggle";
+import { CustomSelect } from "../../../components/CustomSelect";
 import { Settings, Sliders, Cpu, Zap, Box, Wand2, ChevronDown, ChevronRight } from "lucide-react";
 import { useWizard } from "../context/WizardContext";
 
@@ -15,6 +18,23 @@ const ALL_METHODS = [
 
 const SCHEDULERS = ["cosine", "linear", "constant", "polynomial"];
 const OPTIMIZERS = ["paged_adamw_8bit", "adamw_8bit", "adamw_torch", "adafactor"];
+
+// Per-method baseline knobs, mirrored from the backend's own per-type defaults
+// (finetune-lab/backend/workers/gpu_worker.py `_build_config`). Applied whenever
+// the user switches training method so each method starts from settings tuned
+// for it, instead of every method sharing one generic baseline.
+const METHOD_DEFAULTS = {
+  qlora: { epochs: 3, learning_rate: 2e-4, weight_decay: 0.0, lr_scheduler_type: "cosine", packing: false },
+  lora: { epochs: 3, learning_rate: 2e-4, weight_decay: 0.0, lr_scheduler_type: "cosine", packing: false },
+  sft: { epochs: 3, learning_rate: 2e-4, weight_decay: 0.0, lr_scheduler_type: "cosine", packing: false },
+  full: { epochs: 3, learning_rate: 2e-5, weight_decay: 0.0, lr_scheduler_type: "cosine", packing: false },
+  cpt: { epochs: 1, learning_rate: 5e-5, weight_decay: 0.01, lr_scheduler_type: "linear", packing: true, train_embeddings: true, embedding_learning_rate: 5e-6 },
+  vision: { epochs: 3, learning_rate: 2e-4, weight_decay: 0.0, lr_scheduler_type: "cosine", packing: false },
+};
+
+// Methods whose backend runner loads a 4-bit base by default (see `quant_for`
+// in gpu_worker.py) — LoftQ init only makes sense for those.
+const FOUR_BIT_METHODS = ["qlora", "sft", "cpt", "vision"];
 
 function parseParams(modelData) {
   const raw = modelData?.parameters || "";
@@ -45,14 +65,6 @@ function recommend(modelData) {
   };
 }
 
-function Toggle({ on, onClick }) {
-  return (
-    <button onClick={onClick} className={`w-12 h-6 rounded-full p-1 transition-colors ${on ? "bg-neu-accent" : "bg-neu-dark"}`}>
-      <div className={`bg-white w-4 h-4 rounded-full transition-transform ${on ? "translate-x-6" : "translate-x-0"}`} />
-    </button>
-  );
-}
-
 export default function TrainingConfigPage() {
   const navigate = useNavigate();
   const { draft, updateConfig } = useWizard();
@@ -74,8 +86,12 @@ export default function TrainingConfigPage() {
   };
 
   const setMethod = (id) => {
-    updateConfig({ training_type: id, ...(id === "cpt" ? { packing: true } : {}) });
+    updateConfig({ training_type: id, ...(METHOD_DEFAULTS[id] || {}) });
   };
+
+  const showAdapter = config.training_type !== "full";
+  const showLoftq = FOUR_BIT_METHODS.includes(config.training_type);
+  const showDatasetConfig = config.training_type !== "vision";
 
   const effBatch = (config.batch_size || 1) * (config.gradient_accumulation || 1);
 
@@ -125,7 +141,7 @@ export default function TrainingConfigPage() {
             ))}
           </div>
 
-          {["sft", "lora", "qlora"].includes(config.training_type) && (
+          {["sft", "lora", "qlora", "cpt", "vision"].includes(config.training_type) && (
             <p className="text-[11px] font-mono text-neu-dim">
               Base precision: <span className="text-neu-accent">{config.training_type === "lora" ? "16-bit" : "4-bit"}</span>
               {config.training_type === "lora"
@@ -174,16 +190,22 @@ export default function TrainingConfigPage() {
             </button>
             {showAdvanced && (
               <div className="neu-plate p-6 rounded-2xl space-y-4 animate-in fade-in duration-200">
-                <Field label="LR Scheduler">
-                  <select value={config.lr_scheduler_type} onChange={(e) => handleUpdate("lr_scheduler_type", e.target.value)} className="neu-input bg-transparent shadow-none">
-                    {SCHEDULERS.map((s) => <option key={s} value={s} className="bg-neu-dark">{s}</option>)}
-                  </select>
-                </Field>
-                <Field label="Optimizer">
-                  <select value={config.optim} onChange={(e) => handleUpdate("optim", e.target.value)} className="neu-input bg-transparent shadow-none">
-                    {OPTIMIZERS.map((o) => <option key={o} value={o} className="bg-neu-dark">{o}</option>)}
-                  </select>
-                </Field>
+                <div>
+                  <label className="block text-xs font-bold text-neu-dim tracking-widest uppercase mb-3">LR Scheduler</label>
+                  <CustomSelect
+                    value={config.lr_scheduler_type}
+                    onChange={(v) => handleUpdate("lr_scheduler_type", v)}
+                    options={SCHEDULERS.map((s) => ({ value: s, label: s }))}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-neu-dim tracking-widest uppercase mb-3">Optimizer</label>
+                  <CustomSelect
+                    value={config.optim}
+                    onChange={(v) => handleUpdate("optim", v)}
+                    options={OPTIMIZERS.map((o) => ({ value: o, label: o }))}
+                  />
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <Field label="Warmup Ratio">
                     <input type="number" step="0.01" value={config.warmup_ratio} onChange={(e) => handleUpdate("warmup_ratio", Number(e.target.value))} className="neu-input bg-transparent shadow-none" />
@@ -203,38 +225,40 @@ export default function TrainingConfigPage() {
               </div>
             )}
 
-            {/* SFT / CPT dataset config */}
-            <div className={`space-y-4 transition-opacity duration-300 ${["sft", "cpt"].includes(config.training_type) ? "opacity-100" : "opacity-40 pointer-events-none"}`}>
-              <h3 className="text-sm font-bold text-neu-text tracking-widest uppercase flex items-center gap-2 mt-6">
-                <Box size={14} className="text-neu-accent" /> Dataset Config
-              </h3>
-              <div className="neu-plate p-6 rounded-2xl space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <label className="text-sm font-bold text-neu-text">Sequence Packing</label>
-                    <p className="text-[10px] text-neu-dim mt-1">Accelerates training for short sequences (up to 5×)</p>
+            {/* Dataset config: packing applies to every text method; CPT adds embedding fields */}
+            {showDatasetConfig && (
+              <div className="space-y-4">
+                <h3 className="text-sm font-bold text-neu-text tracking-widest uppercase flex items-center gap-2 mt-6">
+                  <Box size={14} className="text-neu-accent" /> Dataset Config
+                </h3>
+                <div className="neu-plate p-6 rounded-2xl space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="text-sm font-bold text-neu-text">Sequence Packing</label>
+                      <p className="text-[10px] text-neu-dim mt-1">Accelerates training for short sequences (up to 5×)</p>
+                    </div>
+                    <Toggle on={config.packing} onClick={() => handleUpdate("packing", !config.packing)} />
                   </div>
-                  <Toggle on={config.packing} onClick={() => handleUpdate("packing", !config.packing)} />
-                </div>
-                {config.training_type === "cpt" && (
-                  <>
-                    <div className="flex items-center justify-between pt-4 border-t border-white/5">
-                      <div>
-                        <label className="text-sm font-bold text-neu-text">Train Embeddings</label>
-                        <p className="text-[10px] text-neu-dim mt-1">Also tune embed_tokens + lm_head for new vocabulary</p>
+                  {config.training_type === "cpt" && (
+                    <>
+                      <div className="flex items-center justify-between pt-4 border-t border-white/5">
+                        <div>
+                          <label className="text-sm font-bold text-neu-text">Train Embeddings</label>
+                          <p className="text-[10px] text-neu-dim mt-1">Also tune embed_tokens + lm_head for new vocabulary</p>
+                        </div>
+                        <Toggle on={config.train_embeddings} onClick={() => handleUpdate("train_embeddings", !config.train_embeddings)} />
                       </div>
-                      <Toggle on={config.train_embeddings} onClick={() => handleUpdate("train_embeddings", !config.train_embeddings)} />
-                    </div>
-                    <div className={`transition-opacity ${config.train_embeddings ? "" : "opacity-40 pointer-events-none"}`}>
-                      <Field label="Embedding Learning Rate">
-                        <input type="number" step="0.000001" min="0" value={config.embedding_learning_rate} onChange={(e) => handleUpdate("embedding_learning_rate", Number(e.target.value))} className="neu-input bg-transparent shadow-none" />
-                      </Field>
-                    </div>
-                    <p className="text-[10px] text-neu-dim">CPT trains on a raw-text corpus (a <span className="font-mono">text</span> column). Use domain documents, not Q&amp;A pairs.</p>
-                  </>
-                )}
+                      <div className={`transition-opacity ${config.train_embeddings ? "" : "opacity-40 pointer-events-none"}`}>
+                        <Field label="Embedding Learning Rate">
+                          <input type="number" step="0.000001" min="0" value={config.embedding_learning_rate} onChange={(e) => handleUpdate("embedding_learning_rate", Number(e.target.value))} className="neu-input bg-transparent shadow-none" />
+                        </Field>
+                      </div>
+                      <p className="text-[10px] text-neu-dim">CPT trains on a raw-text corpus (a <span className="font-mono">text</span> column). Use domain documents, not Q&amp;A pairs.</p>
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Vision config */}
             {config.training_type === "vision" && (
@@ -268,48 +292,54 @@ export default function TrainingConfigPage() {
             )}
           </div>
 
-          {/* Adapter config */}
+          {/* Adapter config — not applicable to Full fine-tuning (no LoRA layer) */}
           <div className="space-y-4">
             <h3 className="text-sm font-bold text-neu-text tracking-widest uppercase flex items-center gap-2">
               <Sliders size={14} className="text-neu-accent" /> Adapter Configuration
             </h3>
-            <div className={`neu-plate p-6 rounded-2xl space-y-6 transition-opacity duration-300 ${["sft", "lora", "qlora", "cpt", "vision"].includes(config.training_type) ? "opacity-100" : "opacity-40 pointer-events-none"}`}>
-              <div className="flex flex-col space-y-2">
-                <label className="text-[10px] font-bold text-neu-dim uppercase tracking-widest flex justify-between">
-                  <span>LoRA Rank (r)</span><span className="text-neu-accent">{config.lora_rank}</span>
-                </label>
-                <div className="neu-trough p-3">
-                  <input type="range" min="8" max="128" step="8" value={config.lora_rank} onChange={(e) => handleUpdate("lora_rank", Number(e.target.value))} className="w-full accent-neu-accent" />
-                </div>
-              </div>
-              <div className="flex flex-col space-y-2">
-                <label className="text-[10px] font-bold text-neu-dim uppercase tracking-widest flex justify-between">
-                  <span>LoRA Alpha</span><span className="text-neu-accent">{config.lora_alpha}</span>
-                </label>
-                <div className="neu-trough p-3">
-                  <input type="range" min="8" max="256" step="8" value={config.lora_alpha} onChange={(e) => handleUpdate("lora_alpha", Number(e.target.value))} className="w-full accent-neu-accent" />
-                </div>
-              </div>
-              <Field label="LoRA Dropout">
-                <input type="number" step="0.01" min="0" max="1" value={config.lora_dropout} onChange={(e) => handleUpdate("lora_dropout", Number(e.target.value))} className="neu-input bg-transparent shadow-none" />
-              </Field>
-              <div className="pt-4 border-t border-white/5 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <label className="text-sm font-bold text-neu-text">RSLoRA</label>
-                    <p className="text-[10px] text-neu-dim mt-1">Rank-Stabilized LoRA (Unsloth optimized)</p>
+            {showAdapter ? (
+              <div className="neu-plate p-6 rounded-2xl space-y-6">
+                <Slider
+                  label="LoRA Rank (r)"
+                  min={8} max={128} step={8}
+                  value={config.lora_rank}
+                  onChange={(v) => handleUpdate("lora_rank", v)}
+                />
+                <Slider
+                  label="LoRA Alpha"
+                  min={8} max={256} step={8}
+                  value={config.lora_alpha}
+                  onChange={(v) => handleUpdate("lora_alpha", v)}
+                />
+                <Field label="LoRA Dropout">
+                  <input type="number" step="0.01" min="0" max="1" value={config.lora_dropout} onChange={(e) => handleUpdate("lora_dropout", Number(e.target.value))} className="neu-input bg-transparent shadow-none" />
+                </Field>
+                <div className="pt-4 border-t border-white/5 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="text-sm font-bold text-neu-text">RSLoRA</label>
+                      <p className="text-[10px] text-neu-dim mt-1">Rank-Stabilized LoRA (Unsloth optimized)</p>
+                    </div>
+                    <Toggle on={config.use_rslora} onClick={() => handleUpdate("use_rslora", !config.use_rslora)} />
                   </div>
-                  <Toggle on={config.use_rslora} onClick={() => handleUpdate("use_rslora", !config.use_rslora)} />
-                </div>
-                <div className={`flex items-center justify-between transition-opacity ${["qlora", "sft"].includes(config.training_type) ? "" : "opacity-40 pointer-events-none"}`}>
-                  <div>
-                    <label className="text-sm font-bold text-neu-text">LoftQ Initialization</label>
-                    <p className="text-[10px] text-neu-dim mt-1">Improves QLoRA accuracy (4-bit only)</p>
-                  </div>
-                  <Toggle on={config.use_loftq} onClick={() => handleUpdate("use_loftq", !config.use_loftq)} />
+                  {showLoftq && (
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <label className="text-sm font-bold text-neu-text">LoftQ Initialization</label>
+                        <p className="text-[10px] text-neu-dim mt-1">Improves accuracy on the 4-bit base</p>
+                      </div>
+                      <Toggle on={config.use_loftq} onClick={() => handleUpdate("use_loftq", !config.use_loftq)} />
+                    </div>
+                  )}
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="neu-plate p-6 rounded-2xl">
+                <p className="text-[11px] font-mono text-neu-dim">
+                  Full fine-tuning updates every model weight directly — there's no LoRA adapter to configure.
+                </p>
+              </div>
+            )}
           </div>
         </div>
 

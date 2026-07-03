@@ -7,9 +7,9 @@ importing this module — and therefore booting the API — never requires the
 training stack to be installed.
 
 Supported: ``sft`` / ``lora`` / ``qlora`` (adapter-based, differing by
-quantization), ``cpt`` (continued pre-training), and ``full`` (full-parameter,
-16-bit). Any method can run on multiple GPUs via ``num_gpus`` (DDP through
-``accelerate``). ``vision`` is recognised but not yet implemented.
+quantization), ``cpt`` (continued pre-training), ``full`` (full-parameter,
+16-bit), and ``vision`` (image+text, routed to ``UnslothVisionRunner``). Any
+method can run on multiple GPUs via ``num_gpus`` (DDP through ``accelerate``).
 """
 import json
 import logging

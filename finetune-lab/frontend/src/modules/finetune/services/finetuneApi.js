@@ -31,6 +31,15 @@ async function req(path, { method = "GET", body, form, signal } = {}) {
 export const models = {
   list: () => req("/models/"),
   get: (id) => req(`/models/${encodeURIComponent(id)}`),
+  searchHf: (q) => req(`/models/search/hf?q=${encodeURIComponent(q)}`),
+  uploadLocal: (fileList) => {
+    const form = new FormData();
+    for (const file of fileList) {
+      form.append("files", file);
+      form.append("paths", file.webkitRelativePath || file.name);
+    }
+    return req("/models/upload", { method: "POST", form });
+  },
 };
 
 export const datasets = {
@@ -41,6 +50,7 @@ export const datasets = {
     return req("/datasets/upload", { method: "POST", form });
   },
   validate: (path) => req("/datasets/validate", { method: "POST", body: { path } }),
+  searchHf: (q) => req(`/datasets/search/hf?q=${encodeURIComponent(q)}`),
 };
 
 export const hardware = {

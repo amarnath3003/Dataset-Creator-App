@@ -181,4 +181,5 @@ class JobStoreSink:
         elif etype in ("job_failed", "oom_failed"):
             job["status"] = "failed"
             job["error"] = event.get("error", "Unknown error")
+            job["traceback"] = event.get("traceback")
             log(f"! [FAILED] Training failed: {job['error']}")

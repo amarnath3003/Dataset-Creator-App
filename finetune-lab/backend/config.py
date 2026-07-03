@@ -13,6 +13,7 @@ STORAGE_DIR = BASE_DIR / "storage"
 RUNS_DIR = STORAGE_DIR / "runs"
 DATASETS_DIR = STORAGE_DIR / "datasets"
 EXPORTS_DIR = STORAGE_DIR / "exports"
+MODELS_DIR = STORAGE_DIR / "models"
 JOBS_FILE = STORAGE_DIR / "jobs.json"
 EXPORTS_FILE = STORAGE_DIR / "exports.json"
 
@@ -23,7 +24,7 @@ DATASET_LAB_PROJECTS = REPO_ROOT / "dataset-lab" / "projects"
 
 
 def ensure_dirs() -> None:
-    for directory in (STORAGE_DIR, RUNS_DIR, DATASETS_DIR, EXPORTS_DIR):
+    for directory in (STORAGE_DIR, RUNS_DIR, DATASETS_DIR, EXPORTS_DIR, MODELS_DIR):
         directory.mkdir(parents=True, exist_ok=True)
 
 

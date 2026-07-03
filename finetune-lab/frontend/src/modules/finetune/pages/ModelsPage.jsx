@@ -10,9 +10,14 @@ export default function ModelsPage() {
   const { update, reset } = useWizard();
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    models.list().then(setList).catch(() => setList([])).finally(() => setLoading(false));
+    models
+      .list()
+      .then(setList)
+      .catch((e) => setError(e.message || "Failed to load model registry."))
+      .finally(() => setLoading(false));
   }, []);
 
   const selectModel = (model) => {
@@ -32,6 +37,11 @@ export default function ModelsPage() {
 
       {loading ? (
         <p className="text-neu-dim text-sm py-10 text-center">Loading registry…</p>
+      ) : error ? (
+        <div className="neu-trough p-10 text-center text-red-400 rounded-xl">
+          <Boxes size={28} className="mx-auto mb-3 opacity-40" />
+          {error}
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {list.map((model) => {

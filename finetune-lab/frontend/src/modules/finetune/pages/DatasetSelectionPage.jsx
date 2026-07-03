@@ -4,6 +4,7 @@ import { Button } from '../../../components/Button';
 import { Database, Upload, Check, Loader2, AlertTriangle, FileJson, Download } from 'lucide-react';
 import { datasetApi } from '../services/datasetApi';
 import { useWizard } from '../context/WizardContext';
+import { useHfSearch } from '../hooks/useHfSearch';
 
 // Schemas the SFT engine can train on directly. PREFERENCE is DPO-only.
 const SFT_OK = new Set(['instruction', 'chatml', 'sharegpt', 'completion']);
@@ -29,6 +30,12 @@ export default function DatasetSelectionPage() {
   const [selectedId, setSelectedId] = useState(null);
   const [source, setSource] = useState('uploaded'); // 'uploaded' | 'hf'
   const [hfDatasetId, setHfDatasetId] = useState('');
+  const [hfFocused, setHfFocused] = useState(false);
+  const { suggestions: hfSuggestions, loading: hfSearching } = useHfSearch(
+    source === 'hf' ? hfDatasetId : '',
+    datasetApi.searchHf
+  );
+  const hfDropdownOpen = hfFocused && hfSuggestions.length > 0;
 
   const selected = datasets.find((d) => d.id === selectedId) || null;
 
@@ -61,6 +68,9 @@ export default function DatasetSelectionPage() {
       setError(e.message);
     } finally {
       setUploading(false);
+      // Clear so re-selecting the same filename (e.g. retrying after a
+      // rejected upload) still fires onChange.
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -132,14 +142,40 @@ export default function DatasetSelectionPage() {
         {source === 'hf' && (
           <div className="flex flex-col gap-3">
             <label className="text-[10px] font-bold text-neu-dim uppercase tracking-widest">Dataset ID</label>
-            <div className="neu-trough">
+            <div className="neu-trough relative">
               <input
                 type="text"
                 value={hfDatasetId}
                 onChange={(e) => setHfDatasetId(e.target.value)}
+                onFocus={() => setHfFocused(true)}
+                onBlur={() => setTimeout(() => setHfFocused(false), 150)}
                 placeholder="unsloth/LaTeX_OCR"
                 className="neu-input bg-transparent shadow-none"
               />
+              {hfSearching && (
+                <Loader2 size={16} className="animate-spin absolute right-4 top-1/2 -translate-y-1/2 text-neu-dim" />
+              )}
+              {hfDropdownOpen && hfSuggestions.length > 0 && (
+                <div className="absolute z-20 top-full mt-2 w-full neu-plate rounded-xl overflow-hidden border border-white/5 max-h-72 overflow-y-auto shadow-lg">
+                  {hfSuggestions.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        setHfDatasetId(s.id);
+                        setHfFocused(false);
+                      }}
+                      className="w-full text-left px-5 py-3 text-sm font-mono text-neu-dim hover:bg-neu-dark hover:text-neu-accent transition-colors flex justify-between items-center gap-3"
+                    >
+                      <span className="truncate">{s.id}</span>
+                      {s.downloads != null && (
+                        <span className="text-[10px] text-neu-dim/50 shrink-0">{s.downloads.toLocaleString()} DL</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <p className="text-[11px] text-neu-dim">
               Load a dataset directly from the Hugging Face Hub. Required for image datasets used in{' '}

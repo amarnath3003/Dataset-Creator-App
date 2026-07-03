@@ -2,16 +2,9 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { hardwareApi } from "../services/hardwareApi";
 import { Button } from "../../../components/Button";
-import { Cpu, AlertTriangle, CheckCircle2, Server, Clock, Layers } from "lucide-react";
+import { Cpu, AlertTriangle, CheckCircle2, Server, Clock, Layers, WifiOff } from "lucide-react";
 import { useWizard } from "../context/WizardContext";
-
-// Reference GPUs used only for VRAM/time estimation when no real GPU is detected.
-const AVAILABLE_GPUS = [
-  { id: "RTX_3060", name: "RTX 3060", vram: 12, speed: 1 },
-  { id: "RTX_4090", name: "RTX 4090", vram: 24, speed: 3.5 },
-  { id: "A100", name: "NVIDIA A100", vram: 80, speed: 8 },
-  { id: "H100", name: "NVIDIA H100", vram: 80, speed: 12 },
-];
+import { useToast } from "../../../components/Toast";
 
 const MODE_MULTIPLIER = { qlora: 1.0, sft: 1.0, lora: 2.0, cpt: 1.3, vision: 2.5, full: 4.0 };
 
@@ -19,11 +12,14 @@ export default function HardwareSelectionPage() {
   const navigate = useNavigate();
   const { draft, update } = useWizard();
   const { modelId, modelData, datasetPath, trainingConfig } = draft;
+  const toast = useToast();
 
-  const [gpuOptions, setGpuOptions] = useState(AVAILABLE_GPUS);
+  const [gpuOptions, setGpuOptions] = useState([]);
   const [detectedCount, setDetectedCount] = useState(0);
   const [numGpus, setNumGpus] = useState(draft.numGpus || 1);
-  const [selectedGpu, setSelectedGpu] = useState(AVAILABLE_GPUS[0]);
+  const [selectedGpu, setSelectedGpu] = useState(null);
+  const [loadingGpus, setLoadingGpus] = useState(true);
+  const [hwError, setHwError] = useState(null);
 
   const missingInputs = !modelId || !datasetPath;
   const detected = detectedCount > 0;
@@ -32,30 +28,41 @@ export default function HardwareSelectionPage() {
     hardwareApi
       .getGpus()
       .then((data) => {
-        const real = (data.gpus || []).filter((g) => g.vram_total > 0);
-        if (real.length > 0) {
-          const opts = real.map((g) => ({
-            id: String(g.id),
-            name: g.name,
-            vram: Math.max(1, Math.round(g.vram_total / 1024)),
-            speed: 1,
-            real: true,
-          }));
-          setGpuOptions(opts);
-          setSelectedGpu(opts[0]);
-          setDetectedCount(real.length);
+        // The endpoint always answers 200 even when the GPU probe itself
+        // failed (torch missing / driver error) — it reports that failure
+        // via an `error` field, not an HTTP error status. Surface it as a
+        // real error, not as "no GPU detected".
+        if (data.error) {
+          setHwError(data.error);
+          toast.error(`GPU detection failed: ${data.error}`);
         }
+        const real = (data.gpus || []).filter((g) => g.vram_total > 0);
+        const opts = real.map((g) => ({
+          id: String(g.id),
+          name: g.name,
+          vram: Math.max(1, Math.round(g.vram_total / 1024)),
+          speed: 1,
+          real: true,
+        }));
+        setGpuOptions(opts);
+        setSelectedGpu(opts[0] || null);
+        setDetectedCount(real.length);
       })
-      .catch(() => {});
-  }, []);
+      .catch((err) => {
+        const msg = err?.message || "Can't reach the backend.";
+        setHwError(msg);
+        toast.error(`Can't reach the backend — is it running on :8000? ${msg}`);
+      })
+      .finally(() => setLoadingGpus(false));
+  }, [toast]);
 
   // Persist the parallelism choice into the draft as it changes.
   useEffect(() => {
-    update({ numGpus, selectedGpuName: selectedGpu?.name });
+    update({ numGpus, selectedGpuName: selectedGpu?.name || null });
   }, [numGpus, selectedGpu, update]);
 
   const estimation = useMemo(() => {
-    if (!modelData || !trainingConfig) return { vram: 0, time: "—", fits: true };
+    if (!modelData || !trainingConfig || !selectedGpu) return { vram: 0, time: "—", fits: true };
     let estVram = (modelData.min_vram || 6) * (MODE_MULTIPLIER[trainingConfig.training_type] ?? 1.0);
     estVram += (trainingConfig.batch_size * trainingConfig.max_seq_length) / 8192;
     const baseHours = 2 * (estVram / 8);
@@ -82,28 +89,38 @@ export default function HardwareSelectionPage() {
         <div className="space-y-4">
           <h3 className="text-sm font-bold text-neu-text tracking-widest uppercase flex items-center gap-2">
             <Server size={14} className="text-neu-accent" />
-            {detected ? "Detected GPUs" : "Reference GPUs (estimate only)"}
+            Detected GPUs
           </h3>
-          {!detected && (
+          {loadingGpus ? (
+            <p className="text-[11px] font-mono text-neu-dim">Detecting GPUs on the backend…</p>
+          ) : hwError ? (
+            <div className="neu-alert-warn flex items-start gap-2">
+              <WifiOff size={16} className="shrink-0 mt-0.5" />
+              <span className="text-[11px] font-mono">
+                Can't reach the backend — is it running on :8000? <span className="text-neu-dim">{hwError}</span>
+              </span>
+            </div>
+          ) : !detected ? (
             <p className="text-[11px] font-mono text-neu-dim">
-              No CUDA GPU detected by the backend — showing reference cards for estimation. Training runs on the server's actual hardware.
+              No CUDA GPU detected by the backend. Training will fall back to CPU or whatever hardware the server actually has.
             </p>
-          )}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {gpuOptions.map((gpu) => (
-              <div
-                key={gpu.id}
-                onClick={() => setSelectedGpu(gpu)}
-                className={`relative neu-plate p-4 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all duration-300 ${selectedGpu.id === gpu.id ? "ring-2 ring-neu-accent shadow-[0_0_15px_rgba(255,107,0,0.2)]" : "hover:-translate-y-1"}`}
-              >
-                <Cpu size={24} className={selectedGpu.id === gpu.id ? "text-neu-accent" : "text-neu-dim"} />
-                <div className="text-center mt-2">
-                  <div className="font-bold text-neu-text text-sm">{gpu.name}</div>
-                  <div className="text-[10px] text-neu-dim font-mono mt-1">{gpu.vram} GB VRAM</div>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {gpuOptions.map((gpu) => (
+                <div
+                  key={gpu.id}
+                  onClick={() => setSelectedGpu(gpu)}
+                  className={`relative neu-plate p-4 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all duration-300 ${selectedGpu?.id === gpu.id ? "ring-2 ring-neu-accent shadow-[0_0_15px_rgba(255,107,0,0.2)]" : "hover:-translate-y-1"}`}
+                >
+                  <Cpu size={24} className={selectedGpu?.id === gpu.id ? "text-neu-accent" : "text-neu-dim"} />
+                  <div className="text-center mt-2">
+                    <div className="font-bold text-neu-text text-sm">{gpu.name}</div>
+                    <div className="text-[10px] text-neu-dim font-mono mt-1">{gpu.vram} GB VRAM</div>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Parallelism */}
@@ -153,7 +170,7 @@ export default function HardwareSelectionPage() {
               <div className="relative flex items-center justify-center w-32 h-32">
                 <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
                   <circle cx="50" cy="50" r="40" fill="transparent" stroke="rgba(255,255,255,0.05)" strokeWidth="8" />
-                  <circle cx="50" cy="50" r="40" fill="transparent" stroke={estimation.fits ? "#FF6B00" : "#EF4444"} strokeWidth="8" strokeDasharray={`${Math.min((estimation.vram / selectedGpu.vram) * 251, 251)} 251`} className="transition-all duration-1000 ease-out" />
+                  <circle cx="50" cy="50" r="40" fill="transparent" stroke={estimation.fits ? "#FF6B00" : "#EF4444"} strokeWidth="8" strokeDasharray={`${Math.min((estimation.vram / (selectedGpu?.vram || 1)) * 251, 251)} 251`} className="transition-all duration-1000 ease-out" />
                 </svg>
                 <div className="absolute flex flex-col items-center">
                   <span className={`text-2xl font-bold ${!estimation.fits && "text-red-500"}`}>{estimation.vram}</span>
@@ -167,7 +184,13 @@ export default function HardwareSelectionPage() {
                   <div className="flex items-center gap-2 text-red-500 text-sm font-bold"><AlertTriangle size={16} /> OOM Risk</div>
                 )}
                 <div className="text-[10px] text-neu-dim mt-2 max-w-[200px]">
-                  {selectedGpu.name} provides {selectedGpu.vram} GB. {estimation.fits ? "You have headroom." : "Reduce batch/seq, or use QLoRA."}
+                  {selectedGpu ? (
+                    <>
+                      {selectedGpu.name} provides {selectedGpu.vram} GB. {estimation.fits ? "You have headroom." : "Reduce batch/seq, or use QLoRA."}
+                    </>
+                  ) : (
+                    "No GPU selected — estimate unavailable."
+                  )}
                 </div>
               </div>
             </div>

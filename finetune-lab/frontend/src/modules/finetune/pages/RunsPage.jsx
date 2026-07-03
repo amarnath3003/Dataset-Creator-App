@@ -36,6 +36,8 @@ export default function RunsPage() {
     try {
       await training.stop(id);
       await load();
+    } catch (err) {
+      alert(err.message);
     } finally {
       setBusy(null);
     }

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Plus, Activity, CheckCircle2, Cpu, ArrowRight, Layers, Zap } from "lucide-react";
+import { Plus, Activity, CheckCircle2, Cpu, ArrowRight, Layers, Zap, WifiOff } from "lucide-react";
 import { training, hardware } from "../services/finetuneApi";
 import { useWizard } from "../context/WizardContext";
 import { statusMeta, fmtTime, shortId, METHOD_LABEL } from "../lib/format";
@@ -10,16 +10,26 @@ export default function DashboardPage() {
   const { reset } = useWizard();
   const [runs, setRuns] = useState([]);
   const [gpus, setGpus] = useState(null);
+  const [hwError, setHwError] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     try {
       const [r, g] = await Promise.all([
         training.listRuns().catch(() => []),
-        hardware.gpus().catch(() => null),
+        // Never reject: on network failure resolve a sentinel so we can tell
+        // "backend unreachable" apart from "backend up, zero GPUs" — those
+        // used to render identically, which reads as a false "all clear".
+        hardware.gpus().catch((err) => ({ __unreachable: err?.message || "Backend unreachable" })),
       ]);
       setRuns(Array.isArray(r) ? r : []);
-      setGpus(g);
+      if (g?.__unreachable) {
+        setGpus(null);
+        setHwError(g.__unreachable);
+      } else {
+        setGpus(g);
+        setHwError(g?.error || null);
+      }
     } finally {
       setLoading(false);
     }
@@ -66,8 +76,8 @@ export default function DashboardPage() {
         <StatCard
           icon={Cpu}
           label="GPUs Detected"
-          value={gpus ? gpus.count ?? 0 : "—"}
-          sub={gpus?.cuda ? "CUDA ready" : "CPU / none"}
+          value={hwError ? "—" : gpus ? gpus.count ?? 0 : "—"}
+          sub={hwError ? "backend unreachable" : gpus?.cuda ? "CUDA ready" : "CPU / none"}
         />
       </div>
 
@@ -132,21 +142,29 @@ export default function DashboardPage() {
             <h2 className="flex items-center gap-2 text-neu-text font-bold">
               <Cpu size={18} className="text-neu-dim" /> Hardware
             </h2>
-            <div className={`led ${gpus?.cuda ? "led-green" : "led-off"}`} />
+            <div className={`led ${hwError ? "led-red" : gpus?.cuda ? "led-green" : "led-off"}`} />
           </div>
           <div className="neu-section-body space-y-3">
-            {gpus?.gpus?.length ? (
-              gpus.gpus.map((g) => (
-                <div key={g.id} className="neu-plate p-4 rounded-xl">
-                  <div className="text-sm font-bold text-neu-text truncate">{g.name}</div>
-                  <div className="text-[10px] font-mono text-neu-dim uppercase tracking-widest mt-1">
-                    {g.vram_total ? `${(g.vram_total / 1024).toFixed(0)} GB VRAM` : "VRAM unknown"}
+            {hwError ? (
+              <div className="neu-trough p-5 rounded-xl text-center text-red-400 text-xs flex flex-col items-center gap-2">
+                <WifiOff size={18} />
+                <span>Can't reach the backend — is it running on :8000?</span>
+                <span className="text-neu-dim/70 font-mono">{hwError}</span>
+              </div>
+            ) : gpus?.gpus?.filter((g) => g.vram_total > 0)?.length ? (
+              gpus.gpus
+                .filter((g) => g.vram_total > 0)
+                .map((g) => (
+                  <div key={g.id} className="neu-plate p-4 rounded-xl">
+                    <div className="text-sm font-bold text-neu-text truncate">{g.name}</div>
+                    <div className="text-[10px] font-mono text-neu-dim uppercase tracking-widest mt-1">
+                      {(g.vram_total / 1024).toFixed(0)} GB VRAM
+                    </div>
                   </div>
-                </div>
-              ))
+                ))
             ) : (
               <div className="neu-trough p-5 rounded-xl text-center text-neu-dim text-xs">
-                No CUDA GPU detected. Training runs on the server's hardware; estimates use reference cards.
+                No CUDA GPU detected. Training will fall back to CPU or whatever hardware the server actually has.
               </div>
             )}
           </div>

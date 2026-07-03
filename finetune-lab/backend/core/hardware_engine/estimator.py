@@ -5,8 +5,8 @@ class GPUDetector:
     @staticmethod
     def get_gpus():
         if not torch.cuda.is_available():
-            return [{"id": 0, "name": "CPU Only", "vram_total": 0}]
-        
+            return []
+
         gpus = []
         for i in range(torch.cuda.device_count()):
             gpus.append({
