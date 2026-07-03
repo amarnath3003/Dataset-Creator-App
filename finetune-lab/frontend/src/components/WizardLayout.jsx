@@ -65,7 +65,7 @@ export default function WizardLayout() {
                 </div>
                 {index < WIZARD_STEPS.length - 1 && (
                   <div
-                    className={`stage-connector mx-2 flex-1 mt-[-10px] ${
+                    className={`stage-connector mx-2 flex-1 ${
                       isDone ? "stage-connector-done" : "stage-connector-pending"
                     }`}
                   />
