@@ -18,14 +18,6 @@ const SLIDERS = [
   { key: 'max_new_tokens', label: 'Max New Tokens', min: 16, max: 4096, step: 16, hint: 'response length cap' },
 ];
 
-function Track({ pct }) {
-  return (
-    <div className="neu-progress-track w-full mt-2" style={{ height: 6 }}>
-      <div className="neu-progress-fill" style={{ width: `${pct}%` }}></div>
-    </div>
-  );
-}
-
 export default function GenerationControls({ params, onChange }) {
   const set = (key, val) => onChange({ ...params, [key]: val });
 
@@ -42,7 +34,7 @@ export default function GenerationControls({ params, onChange }) {
           const val = params[key] ?? DEFAULT_PARAMS[key];
           const pct = ((val - min) / (max - min)) * 100;
           return (
-            <div key={key}>
+            <div key={key} className="space-y-2.5">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-semibold text-neu-text">{label}</label>
                 <span className="neu-chip">{val}</span>
@@ -51,10 +43,10 @@ export default function GenerationControls({ params, onChange }) {
                 type="range"
                 min={min} max={max} step={step} value={val}
                 onChange={(e) => set(key, key === 'top_k' || key === 'max_new_tokens' ? parseInt(e.target.value) : parseFloat(e.target.value))}
-                className="w-full mt-1"
+                className="neu-range"
+                style={{ background: `linear-gradient(90deg, var(--accent) 0%, var(--accent-light) ${pct}%, #1a1d21 ${pct}%, #1a1d21 100%)` }}
               />
-              <Track pct={pct} />
-              <p className="text-[10px] text-neu-dim/70 mt-1">{hint}</p>
+              <p className="text-[10px] text-neu-dim/70">{hint}</p>
             </div>
           );
         })}

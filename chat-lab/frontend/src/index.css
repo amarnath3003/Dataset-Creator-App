@@ -215,6 +215,36 @@
     box-shadow: inset 3px 3px 6px #141619, inset -3px -3px 6px #2e343b;
   }
 
+  .console-select-card {
+    background: var(--bg-base);
+    box-shadow: 6px 6px 14px #111315, -6px -6px 14px #2e343b;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    transition: box-shadow 0.2s cubic-bezier(.4, 0, .2, 1),
+      transform 0.2s cubic-bezier(.4, 0, .2, 1),
+      border-color 0.2s ease,
+      color 0.2s ease;
+  }
+
+  .console-select-card:hover {
+    box-shadow: 8px 8px 18px #111315, -8px -8px 18px #2e343b;
+    transform: translateY(-2px);
+  }
+
+  .console-select-card:active {
+    background: var(--bg-dark);
+    box-shadow: inset 4px 4px 10px #0e1012, inset -4px -4px 10px #272d33;
+    border-color: rgba(0, 0, 0, 0.4);
+    transform: scale(0.98);
+  }
+
+  .console-select-card-active,
+  .console-select-card-active:hover {
+    background: var(--bg-dark);
+    box-shadow: inset 4px 4px 10px #0e1012, inset -4px -4px 10px #272d33;
+    border-color: rgba(0, 0, 0, 0.4);
+    transform: scale(0.98);
+  }
+
   /* ── Inputs & Text areas ──────────────────────────────── */
   .neu-input {
     background: var(--bg-dark);
@@ -540,9 +570,49 @@
     border: 1px solid rgba(255, 255, 255, 0.04);
     font-size: 11px;
     font-family: 'JetBrains Mono', monospace;
-    color: #60a5fa;
+    color: var(--accent);
     padding: 4px 12px;
     display: inline-block;
+  }
+
+  .neu-range {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(0, 0, 0, 0.35);
+    box-shadow: var(--sh-trough);
+    cursor: pointer;
+  }
+
+  .neu-range::-webkit-slider-runnable-track {
+    height: 12px;
+    border-radius: 999px;
+    background: transparent;
+  }
+
+  .neu-range::-moz-range-track {
+    height: 12px;
+    border-radius: 999px;
+    background: transparent;
+    border: none;
+  }
+
+  .neu-range::-moz-range-progress {
+    height: 12px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-light));
+  }
+
+  .neu-range::-moz-range-thumb {
+    width: 22px;
+    height: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 50%;
+    background: var(--bg-base);
+    box-shadow: 5px 5px 10px #141619, -5px -5px 10px #2e343b;
+    cursor: pointer;
   }
 }
 

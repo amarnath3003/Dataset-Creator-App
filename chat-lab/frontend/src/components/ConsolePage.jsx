@@ -27,7 +27,7 @@ export function PageHero({ title, description, badge, actions, align = "between"
 export function ConsoleSection({ title, icon: Icon, badge, action, children, className = "" }) {
   return (
     <section className={`neu-section ${className}`}>
-      <div className="neu-section-header gap-4">
+      <div className="neu-section-header flex-col items-start gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-center gap-3 min-w-0">
           {Icon && (
             <div className="w-9 h-9 rounded-xl neu-inset flex items-center justify-center text-neu-accent shrink-0">
@@ -39,7 +39,7 @@ export function ConsoleSection({ title, icon: Icon, badge, action, children, cla
             {badge && <div className="text-[10px] font-mono text-neu-dim uppercase tracking-widest mt-1">{badge}</div>}
           </div>
         </div>
-        {action}
+        {action && <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">{action}</div>}
       </div>
       <div className="neu-section-body">{children}</div>
     </section>
