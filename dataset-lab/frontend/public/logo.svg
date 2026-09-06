@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%" role="img" aria-label="Local LLM Studio">
+  <title>Dataset Lab · Finetune Lab · Chat Lab</title>
+  <defs>
+    <!-- Neumorphic plate: top-left lit, bottom-right in shadow (the design system's
+         fixed light source, see skill.md). -->
+    <linearGradient id="plate" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2e343b"/>
+      <stop offset="55%" stop-color="#212529"/>
+      <stop offset="100%" stop-color="#15181b"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity=".13"/>
+      <stop offset="45%" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity=".35"/>
+    </linearGradient>
+
+    <!-- Accent ramp: the design system's warning amber into accent orange -->
+    <linearGradient id="acc" x1="12%" y1="0%" x2="88%" y2="100%">
+      <stop offset="0%" stop-color="#ffb300"/>
+      <stop offset="100%" stop-color="#ff6b00"/>
+    </linearGradient>
+
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="10" result="b"/>
+      <feComposite in="SourceGraphic" in2="b" operator="over"/>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="url(#plate)"/>
+  <rect x="2.5" y="2.5" width="507" height="507" rx="110" fill="none" stroke="url(#rim)" stroke-width="5"/>
+
+  <!-- Three stacked layers: dataset -> model -> chat.
+       Top plate solid, the two below as chevrons so the stack still reads at 16px. -->
+  <g filter="url(#glow)">
+    <path d="M256 97 404 171 256 245 108 171Z" fill="url(#acc)"/>
+    <path d="M108 247 256 321 404 247" fill="none" stroke="#ff6b00" stroke-opacity=".82"
+          stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M108 325 256 399 404 325" fill="none" stroke="#ff6b00" stroke-opacity=".46"
+          stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

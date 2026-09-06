@@ -1,6 +1,6 @@
 # Dataset Lab (Dataset Creator App)
 
-<img src="./frontend/public/vite.svg" alt="Dataset Lab Logo" width="100"/>
+<img src="../docs/brand/logo.svg" alt="Dataset Lab" width="90"/>
 
 ## 📖 Project Overview
 

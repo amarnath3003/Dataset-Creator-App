@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./dataset-lab/frontend/public/logo2-layers.svg" alt="Local LLM Studio" width="86"/>
+<img src="./docs/brand/logo.svg" alt="Local LLM Studio" width="88"/>
 
 # Dataset Lab · Finetune Lab · Chat Lab
 
