@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Local LLM Studio — Animated Demo</title>
+<!--
+  Deterministic, frame-addressable animation of the three labs.
+    ?f=N   -> render exactly frame N (used by tools/render_demo.py to capture GIF frames)
+    (none) -> autoplay in the browser at ~12fps
+  Every frame is a pure function of N, so the capture is reproducible.
+-->
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;transition:none!important;animation:none!important}
+  html,body{width:900px;height:560px;overflow:hidden}
+  body{
+    background:#0e1013;color:#d8dde6;
+    font-family:"Segoe UI",Inter,system-ui,-apple-system,"Helvetica Neue",sans-serif;
+    -webkit-font-smoothing:antialiased;font-size:12px;
+  }
+  .mono{font-family:Consolas,"Cascadia Mono","SF Mono",Menlo,monospace}
+
+  /* ---------- window shell ---------- */
+  #app{position:relative;width:900px;height:560px;overflow:hidden;
+       background:radial-gradient(130% 120% at 18% -10%,#2a3037 0%,#1e2227 45%,#15181b 100%)}
+  .topbar{position:relative;z-index:5;height:42px;display:flex;align-items:center;gap:10px;
+          padding:0 14px;border-bottom:1px solid rgba(255,255,255,.05);
+          background:linear-gradient(#242930,#1b1f23)}
+  .dots{display:flex;gap:6px}
+  .dot{width:9px;height:9px;border-radius:50%;background:#33383f}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:12.5px;letter-spacing:.2px}
+  .brandmark{width:20px;height:20px;border-radius:6px;display:grid;place-items:center;
+             background:#23282e;box-shadow:2px 2px 5px #131517,-2px -2px 5px #2f353d}
+  .urlpill{flex:1;max-width:330px;height:24px;border-radius:12px;display:flex;align-items:center;
+           justify-content:center;gap:7px;font-size:10.5px;letter-spacing:.4px;color:#7c838d;
+           background:#1a1e22;box-shadow:inset 2px 2px 5px #121416,inset -2px -2px 5px #262c33}
+  .toppill{margin-left:auto;display:flex;align-items:center;gap:7px;height:24px;padding:0 11px;
+           border-radius:12px;font-size:9.5px;font-weight:700;letter-spacing:.9px;color:#8a9099;
+           background:#20252a;box-shadow:3px 3px 7px #15181b,-3px -3px 7px #2a3037}
+
+  .stage{position:relative;height:474px}
+  /* Scenes are opaque and stack: the incoming one dissolves *over* the previous,
+     which stays fully lit underneath. Keeps transitions crisp instead of muddy. */
+  .scene{position:absolute;inset:0;padding:12px 14px 0 14px;display:flex;gap:12px;
+         background:radial-gradient(130% 150% at 18% -30%,#2a3037 0%,#1e2227 45%,#15181b 100%)}
+
+  /* ---------- neumorphic primitives ---------- */
+  .plate{background:#212529;border-radius:14px;border:1px solid rgba(255,255,255,.028);
+         box-shadow:6px 6px 14px #141619,-6px -6px 14px #2b3138}
+  .trough{background:#1c2024;border-radius:12px;
+          box-shadow:inset 4px 4px 9px #131518,inset -3px -3px 8px #2a3037}
+  .term{background:#141719;border-radius:12px;box-shadow:inset 5px 5px 12px #0c0e10,inset -3px -3px 9px #232930;
+        color:#5eead4;font-family:Consolas,"Cascadia Mono",monospace;font-size:10.5px;line-height:1.62;
+        padding:11px 13px;overflow:hidden}
+  .led{width:8px;height:8px;border-radius:50%;background:#363c43;flex:none}
+  .led.on{background:#ff6b00;box-shadow:0 0 9px rgba(255,107,0,.8)}
+  .led.grn{background:#22c55e;box-shadow:0 0 9px rgba(34,197,94,.75)}
+  .lbl{font-size:9px;font-weight:700;letter-spacing:1.3px;color:#6b7280;text-transform:uppercase}
+  .badge{display:inline-flex;align-items:center;gap:5px;height:19px;padding:0 9px;border-radius:9px;
+         font-size:9px;font-weight:700;letter-spacing:.9px;color:#8a9099;background:#1e2226;
+         box-shadow:2px 2px 5px #15181b,-2px -2px 5px #2a3037;white-space:nowrap}
+  .badge.acc{color:#ff8533;box-shadow:2px 2px 5px #15181b,-2px -2px 5px #2a3037,0 0 10px rgba(255,107,0,.18)}
+  .badge.grn{color:#4ade80}
+
+  /* ---------- left rail ---------- */
+  .rail{width:150px;flex:none;display:flex;flex-direction:column;gap:7px}
+  .railtitle{padding:0 4px 3px}
+  .navitem{height:32px;border-radius:11px;display:flex;align-items:center;gap:9px;padding:0 11px;
+           font-size:11.5px;font-weight:600;color:#828a94;background:#212529;flex:none;
+           box-shadow:4px 4px 9px #15181b,-4px -4px 9px #2b3138}
+  .navitem .ico{width:15px;height:15px;flex:none;opacity:.75}
+  .navitem.act{color:#ff8533;background:#1e2226;
+               box-shadow:inset 3px 3px 7px #131518,inset -3px -3px 7px #2a3037}
+  .navitem.act .ico{opacity:1}
+  .navitem.done{color:#9aa2ac}
+
+  .main{flex:1;display:flex;flex-direction:column;gap:9px;min-width:0}
+
+  /* ---------- shared bits ---------- */
+  .strip{height:32px;border-radius:11px;display:flex;align-items:center;gap:13px;padding:0 13px;flex:none}
+  .chip{display:flex;align-items:center;gap:6px;font-size:9.5px;font-weight:700;letter-spacing:1.1px;color:#6b7280}
+  .chip.on{color:#c9d0d9}
+  .count{min-width:22px;height:17px;border-radius:8px;display:grid;place-items:center;padding:0 6px;
+         font-size:9.5px;font-weight:700;color:#ff8533;background:#191d21;
+         box-shadow:inset 2px 2px 4px #111315,inset -2px -2px 4px #262c33}
+  .card{padding:11px 13px}
+  .cardhead{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+  .cardhead h3{font-size:11.5px;font-weight:700;color:#c9d0d9;letter-spacing:.2px}
+
+  .track{height:6px;border-radius:3px;background:#191c1f;
+         box-shadow:inset 2px 2px 4px #101214,inset -1px -1px 3px #272d34;overflow:hidden}
+  .fill{height:100%;border-radius:3px;background:linear-gradient(90deg,#ff6b00,#ff9a3d);
+        box-shadow:0 0 10px rgba(255,107,0,.55)}
+
+  .stat{border-radius:11px;padding:8px 10px;background:#1e2226;
+        box-shadow:inset 3px 3px 7px #141619,inset -3px -3px 7px #282e35}
+  .statv{font-size:17px;font-weight:800;color:#e6ebf2;line-height:1.15;letter-spacing:-.2px}
+  .statv.acc{color:#ff8533;text-shadow:0 0 14px rgba(255,107,0,.3)}
+  .statv.grn{color:#4ade80}
+
+  /* ---------- stage flow ---------- */
+  .flow{display:flex;align-items:center;padding:0 6px}
+  .node{display:flex;flex-direction:column;align-items:center;gap:6px;width:64px;flex:none}
+  .ring{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:800;
+        color:#5c636c;background:#212529;box-shadow:3px 3px 7px #15181b,-3px -3px 7px #2b3138}
+  .ring.act{color:#fff;background:linear-gradient(145deg,#ff7a1a,#e05c00);box-shadow:0 0 14px rgba(255,107,0,.55)}
+  .ring.done{color:#ff8533;background:#1e2226;box-shadow:inset 3px 3px 6px #141619,inset -3px -3px 6px #282e35}
+  .nlbl{font-size:8.5px;font-weight:700;letter-spacing:1px;color:#5c636c}
+  .nlbl.on{color:#ff8533}
+  .link{flex:1;height:3px;border-radius:2px;background:#1a1e21;margin-bottom:20px;overflow:hidden;
+        box-shadow:inset 1px 1px 2px #0f1113}
+  .linkf{height:100%;background:linear-gradient(90deg,#ff6b00,#ff9a3d);box-shadow:0 0 8px rgba(255,107,0,.5)}
+
+  /* ---------- qa cards ---------- */
+  .qa{border-radius:10px;padding:8px 10px;margin-bottom:7px;background:#1e2226;
+      box-shadow:3px 3px 8px #16191c,-3px -3px 8px #262c33}
+  .qa .q{font-size:11px;font-weight:700;color:#dbe1e9;line-height:1.35}
+  .qa .a{font-size:10px;color:#8a9099;margin-top:5px;line-height:1.45;font-family:Consolas,monospace}
+
+  /* ---------- chat ---------- */
+  .bub{max-width:86%;border-radius:13px;padding:9px 12px;font-size:11.5px;line-height:1.58}
+  .bub.u{margin-left:auto;color:#e8edf4;background:#262b31;
+         box-shadow:4px 4px 9px #16191c,-4px -4px 9px #2f353d}
+  .bub.a{color:#c9d0d9;background:#1c2024;
+         box-shadow:inset 3px 3px 8px #141619,inset -3px -3px 8px #262c33}
+  .caret{display:inline-block;width:6px;height:12px;background:#ff8533;vertical-align:-2px;
+         box-shadow:0 0 8px rgba(255,107,0,.7)}
+
+  /* ---------- footer ---------- */
+  .footer{position:absolute;left:0;right:0;bottom:0;height:44px;z-index:6;display:flex;align-items:center;
+          gap:9px;padding:0 14px;background:linear-gradient(#1a1e22,#141719);
+          border-top:1px solid rgba(255,255,255,.045)}
+  .step{display:flex;align-items:center;gap:7px;height:25px;padding:0 11px;border-radius:12px;
+        font-size:9.5px;font-weight:800;letter-spacing:1px;color:#5c636c;background:#1d2125;
+        box-shadow:3px 3px 7px #131517,-3px -3px 7px #272d34}
+  .step.on{color:#ff8533;box-shadow:3px 3px 7px #131517,-3px -3px 7px #272d34,0 0 14px rgba(255,107,0,.25)}
+  .step.past{color:#9aa2ac}
+  .arrow{color:#3d434a;font-size:11px}
+  .cap{margin-left:auto;font-size:10px;color:#767d87;letter-spacing:.3px;text-align:right}
+  .scrub{position:absolute;left:0;bottom:0;height:2px;background:linear-gradient(90deg,#ff6b00,#ffb300);
+         box-shadow:0 0 8px rgba(255,107,0,.6)}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <div class="dots"><i class="dot"></i><i class="dot"></i><i class="dot"></i></div>
+    <div class="brand">
+      <span class="brandmark" id="bmark"></span>
+      <span id="btitle">Dataset Lab</span>
+    </div>
+    <div class="urlpill mono" id="url">localhost:5173</div>
+    <div class="toppill"><i class="led grn" id="topled"></i><span id="topstat">BACKEND ONLINE</span></div>
+  </div>
+  <div class="stage" id="stage"></div>
+  <div class="footer">
+    <div class="step" id="s1"><i class="led"></i>1 &middot; CREATE DATASET</div>
+    <span class="arrow">&#9656;</span>
+    <div class="step" id="s2"><i class="led"></i>2 &middot; FINE-TUNE</div>
+    <span class="arrow">&#9656;</span>
+    <div class="step" id="s3"><i class="led"></i>3 &middot; TEST &amp; COMPARE</div>
+    <div class="cap" id="cap"></div>
+    <div class="scrub" id="scrub" style="width:0"></div>
+  </div>
+</div>
+
+<script>
+/* ===================== helpers ===================== */
+const $=(s,r)=>(r||document).querySelector(s);
+const cl=t=>t<0?0:t>1?1:t;
+const ease=t=>{t=cl(t);return t*t*(3-2*t)};
+const el=(cls,html,style)=>{const d=document.createElement('div');if(cls)d.className=cls;
+  if(html!=null)d.innerHTML=html;if(style)d.setAttribute('style',style);return d};
+const rnd=i=>{const x=Math.sin(i*12.9898)*43758.5453;return x-Math.floor(x)};
+
+/* tiny stroked glyphs (lucide-ish) */
+const I=d=>'<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '+
+  'stroke-linecap="round" stroke-linejoin="round">'+d+'</svg>';
+const ICO={
+  upload:I('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>'),
+  gear:I('<circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/>'),
+  doc:I('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/>'),
+  play:I('<polygon points="6 3 20 12 6 21 6 3"/>'),
+  chart:I('<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>'),
+  down:I('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>'),
+  grid:I('<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>'),
+  list:I('<line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/>'),
+  box:I('<path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.3 7 12 12 20.7 7"/><line x1="12" y1="22" x2="12" y2="12"/>'),
+  pkg:I('<path d="M16 16v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/><rect x="12" y="2" width="9" height="9" rx="1.5"/>'),
+  cpu:I('<rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="2" x2="9" y2="5"/><line x1="15" y1="2" x2="15" y2="5"/><line x1="9" y1="19" x2="9" y2="22"/><line x1="15" y1="19" x2="15" y2="22"/><line x1="2" y1="9" x2="5" y2="9"/><line x1="2" y1="15" x2="5" y2="15"/><line x1="19" y1="9" x2="22" y2="9"/><line x1="19" y1="15" x2="22" y2="15"/>'),
+  msg:I('<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.9 8.9 0 0 1-4-.9L3 21l1.9-4.9A8.4 8.4 0 0 1 4 11.5 8.4 8.4 0 0 1 12.5 3 8.4 8.4 0 0 1 21 11.5z"/>'),
+  cmp:I('<polyline points="8 3 4 7 8 11"/><line x1="4" y1="7" x2="20" y2="7"/><polyline points="16 13 20 17 16 21"/><line x1="20" y1="17" x2="4" y2="17"/>'),
+  arch:I('<rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><line x1="10" y1="13" x2="14" y2="13"/>'),
+  rocket:I('<path d="M5 13c-1.5 1.5-2 5-2 5s3.5-.5 5-2"/><path d="M14.5 4.5C17 2 21 3 21 3s1 4-1.5 6.5L14 15l-5-5z"/><circle cx="15" cy="9" r="1.4"/>'),
+  srv:I('<rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><line x1="7" y1="7.5" x2="7.01" y2="7.5"/><line x1="7" y1="16.5" x2="7.01" y2="16.5"/>')
+};
+
+/* ===================== scene scaffolding ===================== */
+const FADE=3;
+const SCENES=[{id:'a',len:44},{id:'b',len:48},{id:'c',len:32},{id:'d',len:18},{id:'e',len:14}];
+let acc=0;SCENES.forEach(s=>{s.start=acc;acc+=s.len});
+const TOTAL=acc;
+
+const stage=$('#stage');
+SCENES.forEach(s=>{s.node=el('scene');s.node.id='sc-'+s.id;stage.appendChild(s.node)});
+
+function rail(items,title){
+  const r=el('rail');
+  r.appendChild(el('railtitle','<div class="lbl railname">'+title+'</div>'));
+  items.forEach(it=>r.appendChild(el('navitem',ICO[it.i]+'<span>'+it.t+'</span>')));
+  return r;
+}
+
+/* --------------- SCENE A - Dataset Lab --------------- */
+(function(){
+  const n=SCENES[0].node;
+  n.appendChild(rail([{i:'upload',t:'Upload'},{i:'gear',t:'Settings'},{i:'doc',t:'Prompt'},
+    {i:'play',t:'Run Pipeline'},{i:'chart',t:'Dashboard'},{i:'down',t:'Export'}],'Wilderness-Dataset'));
+  const m=el('main');n.appendChild(m);
+  m.innerHTML=
+   '<div class="strip trough">'+
+     '<div class="chip" id="a-c0"><i class="led"></i>RAW</div>'+
+     '<div class="chip" id="a-c1"><i class="led"></i>CLEANED</div>'+
+     '<div class="chip" id="a-c2"><i class="led"></i>CHUNKS<span class="count" id="a-nch">0</span></div>'+
+     '<div class="chip" id="a-c3"><i class="led"></i>QA<span class="count" id="a-nqa">0</span></div>'+
+     '<div class="badge acc" style="margin-left:auto">field-handbook.txt &middot; 214 KB</div>'+
+   '</div>'+
+   '<div class="plate card" style="flex:none"><div class="flow" id="a-flow"></div></div>'+
+   '<div class="plate card" style="flex:none;padding:10px 13px">'+
+     '<div style="display:flex;align-items:center;gap:9px;margin-bottom:8px">'+
+       '<i class="led on" id="a-led"></i>'+
+       '<div style="font-size:11.5px;font-weight:800;letter-spacing:.6px;color:#e6ebf2" id="a-phase">PIPELINE RUNNING</div>'+
+       '<div class="mono" style="font-size:10px;color:#7c838d" id="a-sub">chunk 0 / 24 &middot; 0%</div>'+
+       '<div class="badge" style="margin-left:auto">llama3.2 &middot; local</div>'+
+     '</div>'+
+     '<div class="track"><div class="fill" id="a-fill" style="width:0"></div></div>'+
+   '</div>'+
+   '<div style="flex:1;display:flex;gap:10px;min-height:0">'+
+     '<div style="width:186px;flex:none;display:flex;flex-direction:column;gap:7px">'+
+       '<div class="stat" style="flex:1"><div class="statv" id="a-v0">&mdash;</div><div class="lbl">Raw text</div></div>'+
+       '<div class="stat" style="flex:1"><div class="statv" id="a-v1">&mdash;</div><div class="lbl">Cleaned</div></div>'+
+       '<div class="stat" style="flex:1"><div class="statv acc" id="a-v2">0</div><div class="lbl">Chunks</div></div>'+
+       '<div class="stat" style="flex:1"><div class="statv acc" id="a-v3">0</div><div class="lbl">QA pairs</div></div>'+
+     '</div>'+
+     '<div class="plate card" style="flex:1;min-width:0;display:flex;flex-direction:column">'+
+       '<div class="cardhead"><i class="led on"></i><h3>QA Pairs Preview</h3>'+
+         '<span class="badge acc" style="margin-left:auto" id="a-fmt">alpaca</span></div>'+
+       '<div style="flex:1;overflow:hidden" id="a-list"></div>'+
+     '</div>'+
+   '</div>';
+  const flow=$('#a-flow',n);
+  ['Upload','Cleaning','Chunking','QA Gen'].forEach((t,i)=>{
+    if(i)flow.appendChild(el('link','<div class="linkf" style="width:0"></div>'));
+    flow.appendChild(el('node','<div class="ring">'+(i+1)+'</div><div class="nlbl">'+t.toUpperCase()+'</div>'));
+  });
+})();
+
+const QAS=[
+ ['What is the first priority for a survivor in most environments?','Shelter &mdash; exposure kills faster than hunger or thirst.'],
+ ['How long should water be boiled if altitude is high?','Longer than one minute; add a minute per 300 m of elevation.'],
+ ['What is an effective way to signal for help?','Use a signal mirror or a three-burst pattern &mdash; threes read as distress.'],
+ ['Which knot holds under a shifting load?','A bowline &mdash; it holds under load and releases cleanly after.']
+];
+
+function sceneA(lt){
+  const n=SCENES[0].node;
+  const up=ease((lt-1)/5),cln=ease((lt-6)/5),chk=ease((lt-11)/6),
+        qa=ease((lt-18)/19),exp=ease((lt-38)/5);
+  const nch=Math.round(24*chk),nqa=Math.round(96*qa);
+
+  $('#a-nch',n).textContent=nch;$('#a-nqa',n).textContent=nqa;
+  $('#a-v2',n).textContent=nch;$('#a-v3',n).textContent=nqa;
+  $('#a-v0',n).textContent=up>.9?'✓':(up>0?'…':'—');
+  $('#a-v1',n).textContent=cln>.9?'✓':(cln>0?'…':'—');
+  $('#a-v0',n).className='statv '+(up>.9?'grn':'');
+  $('#a-v1',n).className='statv '+(cln>.9?'grn':'');
+
+  [up,cln,chk,qa].forEach((v,i)=>{
+    const c=$('#a-c'+i,n);c.classList.toggle('on',v>.5);
+    $('.led',c).className='led '+(v>=1?'grn':v>0?'on':'');
+  });
+
+  const ph=[up,cln,chk,qa];
+  n.querySelectorAll('.node').forEach((nd,i)=>{
+    const r=$('.ring',nd),l=$('.nlbl',nd);
+    r.className='ring '+(ph[i]>=1?'done':ph[i]>0?'act':'');
+    r.textContent=ph[i]>=1?'✓':String(i+1);
+    l.classList.toggle('on',ph[i]>0);
+  });
+  n.querySelectorAll('.linkf').forEach((f,i)=>f.style.width=(ph[i+1]*100).toFixed(1)+'%');
+
+  const done=exp>0;
+  $('#a-phase',n).textContent=done?'EXPORT COMPLETE':qa>0?'GENERATING QA PAIRS':'PREPARING CORPUS';
+  $('#a-sub',n).textContent=done?'96 rows · 412 KB · alpaca.jsonl'
+      :'chunk '+Math.round(24*qa)+' / 24 · '+Math.round(qa*100)+'%';
+  const fill=$('#a-fill',n);
+  fill.style.width=(Math.max(qa,exp)*100).toFixed(1)+'%';
+  fill.style.background=done?'linear-gradient(90deg,#16a34a,#4ade80)':'';
+  fill.style.boxShadow=done?'0 0 10px rgba(34,197,94,.55)':'';
+  $('#a-led',n).className='led '+(done?'grn':'on');
+
+  const list=$('#a-list',n),show=Math.min(QAS.length,Math.floor(qa*4.6));
+  if(list.childElementCount!==show){
+    list.innerHTML='';
+    for(let i=0;i<show;i++)list.appendChild(el('qa',
+      '<div class="q"><span class="badge acc" style="margin-right:7px">Q'+(i+1)+'</span>'+QAS[i][0]+'</div>'+
+      '<div class="a">'+QAS[i][1]+'</div>'));
+  }
+  $('#a-fmt',n).textContent=done?'alpaca ✓ exported':'alpaca';
+
+  const active=lt<6?0:lt<11?1:lt<18?3:lt<38?4:5;
+  n.querySelectorAll('.navitem').forEach((it,i)=>{
+    it.className='navitem'+(i===active?' act':(i<active?' done':''))});
+}
+
+/* --------------- SCENE B - Finetune Lab --------------- */
+(function(){
+  const n=SCENES[1].node;
+  n.appendChild(rail([{i:'grid',t:'Dashboard'},{i:'list',t:'Runs'},{i:'box',t:'Models'},
+    {i:'pkg',t:'Exports'},{i:'gear',t:'Settings'}],'Run rn_8f2a'));
+  const m=el('main');n.appendChild(m);
+  m.innerHTML=
+   '<div class="strip trough" style="height:38px" id="b-wiz"></div>'+
+   '<div style="display:flex;gap:8px;flex:none">'+
+     '<div class="stat" style="flex:1"><div class="statv acc" id="b-st">queued</div><div class="lbl">Status</div></div>'+
+     '<div class="stat" style="flex:1"><div class="statv" id="b-loss">&mdash;</div><div class="lbl">Training loss</div></div>'+
+     '<div class="stat" style="flex:1"><div class="statv" id="b-vram">&mdash;</div><div class="lbl">Peak VRAM</div></div>'+
+     '<div class="stat" style="flex:1"><div class="statv" id="b-eta">&mdash;</div><div class="lbl">ETA</div></div>'+
+   '</div>'+
+   '<div style="flex:1;display:flex;gap:9px;min-height:0">'+
+     '<div class="plate card" style="flex:1.1;min-width:0;display:flex;flex-direction:column">'+
+       '<div class="cardhead"><i class="led on"></i><h3>Loss Curve</h3>'+
+         '<span class="badge" style="margin-left:auto" id="b-step">step 0 / 450</span></div>'+
+       '<div style="flex:1;position:relative" class="trough">'+
+         '<svg id="b-svg" viewBox="0 0 300 120" preserveAspectRatio="none" '+
+              'style="position:absolute;inset:8px 10px;width:calc(100% - 20px);height:calc(100% - 16px)">'+
+           '<defs><linearGradient id="lg" x1="0" y1="0" x2="0" y2="1">'+
+             '<stop offset="0%" stop-color="#ff6b00" stop-opacity=".34"/>'+
+             '<stop offset="100%" stop-color="#ff6b00" stop-opacity="0"/></linearGradient></defs>'+
+           '<g stroke="#2a3037" stroke-width=".6"><line x1="0" y1="30" x2="300" y2="30"/>'+
+             '<line x1="0" y1="60" x2="300" y2="60"/><line x1="0" y1="90" x2="300" y2="90"/></g>'+
+           '<path id="b-area" fill="url(#lg)" d=""/>'+
+           '<path id="b-line" fill="none" stroke="#ff7d1f" stroke-width="2" '+
+                 'stroke-linejoin="round" stroke-linecap="round" d=""/>'+
+           '<circle id="b-dot" r="3.1" fill="#fff" opacity="0"/>'+
+         '</svg>'+
+       '</div>'+
+       '<div style="display:flex;gap:7px;margin-top:8px" id="b-exp"></div>'+
+     '</div>'+
+     '<div class="plate card" style="flex:1;min-width:0;display:flex;flex-direction:column">'+
+       '<div class="cardhead"><i class="led grn"></i><h3>Live Log</h3>'+
+         '<span class="badge grn" style="margin-left:auto">RTX 3070 &middot; 8 GB</span></div>'+
+       '<div class="term" style="flex:1" id="b-log"></div>'+
+     '</div>'+
+   '</div>';
+  const wiz=$('#b-wiz',n);
+  [['srv','Model'],['box','Dataset'],['gear','Config'],['cpu','Hardware'],['rocket','Launch']]
+   .forEach(function(p,k){
+    if(k)wiz.appendChild(el('arrow','▸'));
+    const c=el('chip',ICO[p[0]].replace('class="ico"','class="ico" style="width:13px;height:13px"')+
+      '<span>'+p[1].toUpperCase()+'</span>');
+    c.style.gap='6px';wiz.appendChild(c);
+  });
+  wiz.appendChild(el('badge acc','Llama 3 8B · QLoRA r=16','margin-left:auto'));
+  const exp=$('#b-exp',n);
+  ['Adapter','Merged 16-bit','GGUF','Push to Hub'].forEach(t=>
+    exp.appendChild(el('badge',t,'flex:1;justify-content:center;height:24px')));
+})();
+
+const BLOG=[
+ '> resolving unsloth/llama-3-8b-Instruct-bnb-4bit',
+ '> loading 4-bit weights ......... ok (5.1 GB)',
+ '> LoRA r=16 alpha=32 dropout=0.05',
+ '> trainable 41,943,040 / 8.03B (0.52%)',
+ '> dataset alpaca.jsonl · 96 rows · seq 2048',
+ '> total steps 450 · epochs 3 · bs 2 x ga 4',
+ '> step  60 | loss 1.214 | 1.18k tok/s',
+ '> step 150 | loss 0.842 | 1.21k tok/s',
+ '> step 240 | loss 0.611 | 1.19k tok/s',
+ '> step 330 | loss 0.479 | 1.22k tok/s',
+ '> step 420 | loss 0.416 | 1.20k tok/s',
+ '> saving adapter -> runs/rn_8f2a/final',
+ '> run completed in 11m 42s ✓'
+];
+const lossAt=t=>1.95*Math.exp(-3.1*t)+0.34+(rnd(Math.round(t*60))-0.5)*0.075*(1-t*0.6);
+
+function sceneB(lt){
+  const n=SCENES[1].node;
+  const steps=[1,4,7,10,13];
+  n.querySelectorAll('#b-wiz .chip').forEach((c,i)=>{
+    const on=lt>=steps[i];
+    c.classList.toggle('on',on);
+    c.style.color=on?'#ff8533':'';
+  });
+  const tp=ease((lt-16)/26),fin=lt>=43;
+  const step=Math.round(450*tp),loss=lossAt(tp);
+  $('#b-st',n).textContent=fin?'completed':tp>0?'running':'queued';
+  $('#b-st',n).className='statv '+(fin?'grn':'acc');
+  $('#b-loss',n).textContent=tp>0?loss.toFixed(3):'—';
+  $('#b-vram',n).textContent=tp>0?(5.2+tp*1.1).toFixed(1)+' GB':'—';
+  const rem=(1-tp)*11.7;
+  $('#b-eta',n).textContent=fin?'Done':tp>0?
+      Math.floor(rem)+'m '+String(Math.round((rem%1)*60)).padStart(2,'0')+'s':'—';
+  $('#b-eta',n).className='statv '+(fin?'grn':'');
+  $('#b-step',n).textContent='step '+step+' / 450 · epoch '+Math.min(3,1+Math.floor(tp*3));
+
+  const N=Math.max(2,Math.round(tp*64)),pts=[];
+  for(let i=0;i<N;i++){const t=i/63,x=t*300,y=118-((lossAt(t)-0.3)/1.75)*112;
+    pts.push([x,Math.max(4,Math.min(118,y))])}
+  const d=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+  $('#b-line',n).setAttribute('d',tp>0?d:'');
+  $('#b-area',n).setAttribute('d',tp>0?d+' L'+pts[pts.length-1][0].toFixed(1)+' 120 L0 120 Z':'');
+  const last=pts[pts.length-1],dot=$('#b-dot',n);
+  dot.setAttribute('opacity',tp>0?'1':'0');
+  dot.setAttribute('cx',last[0].toFixed(1));dot.setAttribute('cy',last[1].toFixed(1));
+
+  const nl=Math.min(BLOG.length,Math.round(tp*BLOG.length*1.06));
+  const rows=BLOG.slice(0,nl).map((l,i)=>'<div style="color:'+
+    (l.indexOf('✓')>=0?'#4ade80':i<6?'#8a9099':'#5eead4')+'">'+l+'</div>').join('');
+  const caret=(!fin&&tp>0&&lt%2===0)?'<div style="color:#ff8533">&gt; <span class="caret"></span></div>':'';
+  const term=$('#b-log',n),html=rows+caret;
+  if(term.innerHTML!==html)term.innerHTML=html;
+
+  n.querySelectorAll('.navitem').forEach((it,i)=>it.className='navitem'+(i===1?' act':''));
+  n.querySelectorAll('#b-exp .badge').forEach(b=>b.className='badge'+(fin?' acc':''));
+}
+
+/* --------------- SCENE C - Chat Lab --------------- */
+(function(){
+  const n=SCENES[2].node;
+  n.appendChild(rail([{i:'msg',t:'Chat'},{i:'cmp',t:'Compare'},{i:'arch',t:'History'},
+    {i:'list',t:'Presets'}],'Live Session'));
+  const m=el('main');n.appendChild(m);
+  m.innerHTML=
+   '<div class="strip trough">'+
+     '<div class="chip on"><i class="led grn"></i><span>rn_8f2a &middot; llama-3-8b</span></div>'+
+     '<span class="badge acc">fine-tuned adapter</span>'+
+     '<span class="badge">4-bit &middot; ctx 8192</span>'+
+     '<span class="badge grn" style="margin-left:auto">VRAM 5.4 / 8.0 GB</span>'+
+   '</div>'+
+   '<div style="flex:1;display:flex;gap:9px;min-height:0">'+
+     '<div class="plate card" style="flex:1;min-width:0;display:flex;flex-direction:column">'+
+       '<div style="flex:1;display:flex;flex-direction:column;gap:9px;overflow:hidden" id="c-msgs"></div>'+
+       '<div class="trough" style="height:34px;display:flex;align-items:center;padding:0 12px;margin-top:9px">'+
+         '<span style="font-size:11px;color:#4b5563">Type a message&hellip; '+
+           '<span style="color:#3d434a">Enter to send</span></span>'+
+         '<span class="badge acc" style="margin-left:auto" id="c-send">SEND</span></div>'+
+     '</div>'+
+     '<div style="width:180px;flex:none;display:flex;flex-direction:column;gap:8px">'+
+       '<div class="plate card" style="padding:10px"><div class="lbl" style="margin-bottom:8px">Generation</div>'+
+         '<div id="c-sliders"></div></div>'+
+       '<div class="stat"><div class="statv acc" id="c-tps">&mdash;</div><div class="lbl">tokens / sec</div></div>'+
+       '<div class="stat"><div class="statv" id="c-ttft">&mdash;</div><div class="lbl">time to first token</div></div>'+
+       '<div class="plate card" style="flex:1;padding:10px;display:flex;flex-direction:column">'+
+         '<div class="lbl" style="margin-bottom:7px">System prompt</div>'+
+         '<div class="trough" style="flex:1;padding:8px 9px;font-size:10px;line-height:1.5;color:#8a9099">'+
+           'You are a field guide. Answer from the handbook, cite the section.</div></div>'+
+     '</div>'+
+   '</div>';
+  const sl=$('#c-sliders',n);
+  [['Temperature','0.70',.35],['Top P','0.90',.9],['Top K','20',.2],['Max tokens','512',.125]]
+   .forEach(function(p){
+    sl.appendChild(el('','<div style="display:flex;justify-content:space-between;margin-bottom:4px">'+
+      '<span style="font-size:10px;color:#8a9099">'+p[0]+'</span>'+
+      '<span class="mono" style="font-size:10px;color:#ff8533">'+p[1]+'</span></div>'+
+      '<div class="track" style="margin-bottom:9px"><div class="fill" style="width:'+(p[2]*100)+'%"></div></div>'));
+  });
+})();
+
+const CQ='How long should water be boiled at altitude?';
+const CA='Boil for a full minute at sea level, then add one extra minute for every 300 m (1,000 ft) '+
+ 'of elevation — thinner air lowers the boiling point, so the water runs cooler and needs longer '+
+ 'to sterilise. Above 2,000 m, three minutes is the safe floor.';
+
+function sceneC(lt){
+  const n=SCENES[2].node;
+  const q=ease((lt-2)/4),stream=cl((lt-8)/20),fin=stream>=1;
+  const txt=CA.slice(0,Math.round(CA.length*stream));
+  const caret=(!fin&&stream>0&&lt%2===0)?'<span class="caret"></span>':'';
+  const html=(q>0?'<div class="bub u" style="opacity:'+q.toFixed(2)+'">'+CQ+'</div>':'')+
+    (stream>0?'<div class="bub a">'+txt+caret+'</div>':'')+
+    (fin?'<div style="display:flex;gap:7px"><span class="badge grn">✓ 218 tokens</span>'+
+        '<span class="badge">42.6 tok/s</span><span class="badge">TTFT 0.28s</span>'+
+        '<span class="badge acc">regenerate</span></div>':'');
+  const msgs=$('#c-msgs',n);
+  if(msgs.innerHTML!==html)msgs.innerHTML=html;
+  $('#c-tps',n).textContent=stream>0?(fin?'42.6':(38+rnd(lt)*7).toFixed(1)):'—';
+  $('#c-ttft',n).textContent=stream>0?'0.28 s':'—';
+  $('#c-send',n).className='badge'+(q>0&&!fin?' acc':'');
+  n.querySelectorAll('.navitem').forEach((it,i)=>it.className='navitem'+(i===0?' act':''));
+}
+
+/* --------------- SCENE D - Compare --------------- */
+(function(){
+  const n=SCENES[3].node;
+  n.appendChild(rail([{i:'msg',t:'Chat'},{i:'cmp',t:'Compare'},{i:'arch',t:'History'},
+    {i:'list',t:'Presets'}],'A / B Matchup'));
+  const m=el('main');n.appendChild(m);
+  m.innerHTML=
+   '<div class="strip trough">'+
+     '<div class="chip on"><i class="led on"></i>SAME PROMPT &middot; TWO MODELS</div>'+
+     '<span class="mono" style="font-size:10.5px;color:#8a9099">&quot;'+CQ+'&quot;</span>'+
+   '</div>'+
+   '<div style="flex:1;display:flex;gap:10px;min-height:0">'+
+     '<div class="plate card" style="flex:1;min-width:0;display:flex;flex-direction:column">'+
+       '<div class="cardhead"><i class="led"></i><h3>Base &middot; llama-3-8b</h3>'+
+         '<span class="badge" style="margin-left:auto">untrained</span></div>'+
+       '<div class="bub a" style="flex:1;max-width:100%" id="d-lt"></div>'+
+       '<div style="display:flex;gap:6px;margin-top:8px"><span class="badge">96 tokens</span>'+
+         '<span class="badge">generic</span></div>'+
+     '</div>'+
+     '<div class="plate card" style="flex:1;min-width:0;display:flex;flex-direction:column" id="d-r">'+
+       '<div class="cardhead"><i class="led grn"></i><h3>Fine-tuned &middot; rn_8f2a</h3>'+
+         '<span class="badge acc" style="margin-left:auto">your data</span></div>'+
+       '<div class="bub a" style="flex:1;max-width:100%" id="d-rt"></div>'+
+       '<div style="display:flex;gap:6px;margin-top:8px"><span class="badge grn">✓ on-format</span>'+
+         '<span class="badge grn">✓ cites handbook</span></div>'+
+     '</div>'+
+   '</div>';
+})();
+const DL='Water should generally be boiled for about 1 minute to make it safe to drink. '+
+ 'At higher altitudes you may want to boil it a little bit longer to be safe.';
+const DR='Boil 1 minute at sea level, +1 minute per 300 m of elevation. Above 2,000 m hold a '+
+ 'rolling boil for 3 minutes. — Field Handbook §4.2, Water Treatment.';
+function sceneD(lt){
+  const n=SCENES[3].node;
+  const l=cl((lt-2)/7),r=cl((lt-5)/8);
+  $('#d-lt',n).textContent=DL.slice(0,Math.round(DL.length*l));
+  $('#d-rt',n).textContent=DR.slice(0,Math.round(DR.length*r));
+  $('#d-r',n).style.boxShadow=r>=1?
+    '6px 6px 14px #141619,-6px -6px 14px #2b3138,0 0 22px rgba(34,197,94,.18)':'';
+  n.querySelectorAll('.navitem').forEach((it,i)=>it.className='navitem'+(i===1?' act':''));
+}
+
+/* --------------- SCENE E - Outro --------------- */
+(function(){
+  const n=SCENES[4].node;
+  n.style.padding='0';
+  n.innerHTML=
+   '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:17px">'+
+     '<div style="text-align:center">'+
+       '<div style="font-size:23px;font-weight:800;letter-spacing:-.4px;color:#eef2f7">'+
+         'Your documents <span style="color:#ff8533">→</span> your model '+
+         '<span style="color:#ff8533">→</span> your chat</div>'+
+       '<div class="lbl" style="margin-top:8px;letter-spacing:2.4px">one local pipeline &middot; three labs &middot; no cloud</div>'+
+     '</div>'+
+     '<div style="display:flex;align-items:stretch;gap:11px" id="e-row"></div>'+
+     '<div style="display:flex;gap:7px" id="e-tech"></div>'+
+   '</div>';
+  const row=$('#e-row',n);
+  [['upload','Dataset Lab','scrape &middot; chunk &middot; generate &middot; refine &middot; export'],
+   ['rocket','Finetune Lab','QLoRA &middot; LoRA &middot; SFT &middot; CPT &middot; Full &middot; Vision'],
+   ['msg','Chat Lab','stream &middot; compare &middot; batch-eval &middot; export']]
+   .forEach(function(p,k){
+    if(k)row.appendChild(el('','<span style="color:#4a5058;font-size:18px;line-height:64px">▸</span>'));
+    row.appendChild(el('plate',
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;color:#ff8533">'+
+      ICO[p[0]].replace('class="ico"','class="ico" style="width:16px;height:16px"')+
+      '<b style="font-size:12.5px;color:#e6ebf2">'+p[1]+'</b></div>'+
+      '<div style="font-size:9.6px;color:#767d87;line-height:1.5">'+p[2]+'</div>',
+      'padding:13px 14px;width:206px'));
+  });
+  const tech=$('#e-tech',n);
+  ['FastAPI','React + Vite','Unsloth','Ollama','Hugging Face','GGUF'].forEach(t=>
+    tech.appendChild(el('badge',t)));
+})();
+function sceneE(lt){
+  const n=SCENES[4].node;
+  n.querySelectorAll('#e-row .plate').forEach((c,k)=>{
+    const v=ease((lt-1-k*2)/5);
+    c.style.opacity=v.toFixed(2);
+    c.style.transform='translateY('+((1-v)*10).toFixed(1)+'px)';
+    c.style.boxShadow=v>=1?
+      '6px 6px 14px #141619,-6px -6px 14px #2b3138,0 0 20px rgba(255,107,0,.13)':'';
+  });
+}
+
+/* ===================== frame driver ===================== */
+const RENDER=[sceneA,sceneB,sceneC,sceneD,sceneE];
+const CHROME=[
+  ['Dataset Lab','localhost:5173','Console / Workspace'],
+  ['Finetune Lab','localhost:5173','Run Dashboard'],
+  ['Chat Lab','localhost:5273','Chat'],
+  ['Chat Lab','localhost:5273','Compare'],
+  ['Local LLM Studio','localhost','Dataset → Finetune → Chat']
+];
+const CAPS=[
+  'chunk · generate · refine · export — from .txt files or scraped from the web',
+  'QLoRA / LoRA / SFT / CPT / Full / Vision — live loss, VRAM and logs',
+  'stream from your adapter · tokens, tok/s and TTFT on every reply',
+  'base vs fine-tuned, same prompt — proof the training landed',
+  'FastAPI + React + Unsloth · 100% on your own GPU'
+];
+$('#bmark').innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ff8533"'+
+  ' stroke-width="2.2" stroke-linejoin="round"><polygon points="12 2 22 7.5 12 13 2 7.5 12 2"/>'+
+  '<polyline points="2 12.5 12 18 22 12.5"/><polyline points="2 17 12 22.5 22 17"/></svg>';
+
+function render(f){
+  f=((f%TOTAL)+TOTAL)%TOTAL;
+  let lead=0,bestLt=Infinity;
+  SCENES.forEach((s,i)=>{
+    // A scene lives from its own start until the *next* one has fully covered it,
+    // so only the incoming layer animates: opacity 0->1 plus a short slide-in.
+    let lt=null;
+    [-TOTAL,0,TOTAL].forEach(off=>{
+      const t=f+off-s.start;
+      if(t>=0&&t<s.len+FADE&&(lt===null||t<lt))lt=t;
+    });
+    if(lt===null){s.node.style.visibility='hidden';return}
+    const e=lt<FADE?lt/FADE:1;
+    s.node.style.visibility='visible';
+    s.node.style.opacity=e.toFixed(3);
+    s.node.style.transform='translateX('+((1-e)*18).toFixed(1)+'px)';
+    s.node.style.zIndex=String(100-Math.round(lt));
+    RENDER[i](Math.min(lt,s.len-1));
+    // The window chrome follows whichever layer is at least half faded in.
+    if(e>=0.5&&lt<bestLt){bestLt=lt;lead=i}
+  });
+  const c=CHROME[lead];
+  $('#btitle').textContent=c[0];
+  $('#url').textContent=c[1]+'  /  '+c[2];
+  $('#topstat').textContent=lead===1?'CUDA · RTX 3070':
+    lead===4?'3 LABS · 1 PIPELINE':lead>=2?'MODEL RESIDENT':'BACKEND ONLINE';
+  $('#cap').textContent=CAPS[lead];
+  const grp=lead===0?1:lead===1?2:lead<=3?3:4;
+  [1,2,3].forEach(k=>{
+    const s=$('#s'+k);
+    s.className='step'+(k===grp?' on':(k<grp||grp===4)?' past':'');
+    $('.led',s).className='led '+(k===grp?'on':(k<grp||grp===4)?'grn':'');
+  });
+  $('#scrub').style.width=((f+1)/TOTAL*100).toFixed(2)+'%';
+}
+
+const qs=new URLSearchParams(location.search);
+window.TOTAL_FRAMES=TOTAL;
+if(qs.has('f')){render(parseInt(qs.get('f'),10)||0);document.body.dataset.ready='1';}
+else{let f=0;render(0);setInterval(()=>render(++f),83);}
+</script>
+</body>
+</html>
