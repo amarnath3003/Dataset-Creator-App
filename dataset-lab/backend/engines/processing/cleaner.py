@@ -1,5 +1,5 @@
 import re
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Boilerplate Phrase Fragments (substring match, case-insensitive)
@@ -134,15 +134,19 @@ def _is_boilerplate_line(line: str) -> bool:
 def _score_line(line: str) -> bool:
     """
     Returns True if this line should be KEPT.
-    A line is dropped if it matches any structural noise pattern.
+    Preserves markdown structure (headings, code blocks, lists, tables) and substantive text.
     """
     stripped = line.strip()
 
     if not stripped:
         return False
 
-    # Drop very short lines (< 15 chars) — these are usually menu items or labels
-    if len(stripped) < 15:
+    # Always preserve Markdown headings, code fences, table rows, and list items
+    if re.match(r"^(#{1,6}\s+\S|```|\|.+\||[-*+]\s+\S|\d+\.\s+\S)", stripped):
+        return True
+
+    # Drop very short fragments (< 8 chars) that aren't structural markdown
+    if len(stripped) < 8:
         return False
 
     # Drop nav separators (Home | About | Contact | ...)
@@ -233,7 +237,19 @@ def clean_text_content(text: str) -> str:
     return cleaned.strip()
 
 
+_TRACKING_QUERY_PARAMS = {
+    "fbclid", "gclid", "dclid", "mc_cid", "mc_eid", "ref", "ref_src",
+    "source", "spm", "_ga", "_gl", "igshid", "yclid", "msclkid",
+}
+
+
 def sanitize_url(url: str) -> str:
-    """Remove tracking query parameters from URLs."""
-    parsed = urlparse(url)
-    return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+    """Remove tracking query parameters and fragments while keeping functional query strings."""
+    parsed = urlparse(url.strip())
+    kept_params = [
+        (k, v)
+        for k, v in parse_qsl(parsed.query, keep_blank_values=True)
+        if not k.lower().startswith("utm_") and k.lower() not in _TRACKING_QUERY_PARAMS
+    ]
+    new_query = urlencode(kept_params)
+    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, ""))

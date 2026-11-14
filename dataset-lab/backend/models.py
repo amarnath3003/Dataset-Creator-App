@@ -10,11 +10,12 @@ class PipelineConfig(BaseModel):
     chunk_size: int = Field(default=800, ge=200, le=2000)
     chunk_overlap: int = Field(default=100, ge=0)
     similarity_threshold: float = Field(default=0.92, ge=0.0, le=1.0)
+    chunking_method: str = Field(default="recursive")  # "recursive", "markdown", "semantic", "sentence"
 
 
 class GenerationConfig(BaseModel):
     model_name: str
-    provider: str = "local"  # "local", "openai", "anthropic"
+    provider: str = "local"  # "local", "openai", "anthropic", "extractive"
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     max_tokens: Optional[int] = None
     top_p: float = Field(default=1.0)
@@ -25,7 +26,22 @@ class GenerationConfig(BaseModel):
     api_key: Optional[str] = (
         None  # User-supplied key (takes priority over OPENAI_API_KEY env var)
     )
+    base_url: Optional[str] = None  # Custom OpenAI-compatible base URL
     qa_density_factor: float = Field(default=1.0, ge=0.5, le=3.0)
+
+
+class RawTextPayload(BaseModel):
+    text: str
+    mode: str = "overwrite"  # "overwrite" | "append"
+
+
+class QAPairPayload(BaseModel):
+    question: Optional[str] = None
+    answer: Optional[str] = None
+    instruction: Optional[str] = None
+    output: Optional[str] = None
+    input: Optional[str] = ""
+    rejected: Optional[str] = None
 
 
 class Chunk(BaseModel):

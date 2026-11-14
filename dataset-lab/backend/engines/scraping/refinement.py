@@ -73,6 +73,34 @@ async def refine_text_with_llm(
                         logger.error(
                             f"OpenAI refinement failed with status {response.status}: {await response.text()}"
                         )
+            elif provider == "anthropic":
+                if not api_key:
+                    logger.error("Anthropic API key missing for refinement.")
+                    return raw_text
+
+                async with session.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "x-api-key": api_key,
+                        "anthropic-version": "2023-06-01",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": model_name or "claude-3-5-sonnet-latest",
+                        "max_tokens": 4096,
+                        "system": system_prompt,
+                        "messages": [{"role": "user", "content": truncated_text}],
+                    },
+                    timeout=120,
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        blocks = data.get("content", [])
+                        response_text = "".join(
+                            b.get("text", "") for b in blocks if b.get("type") == "text"
+                        ).strip()
+                        if response_text:
+                            return response_text
             else:
                 # Default to Ollama local structure
                 async with session.post(

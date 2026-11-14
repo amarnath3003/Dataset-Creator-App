@@ -14,6 +14,7 @@ inspects the filesystem, so the API can serve the model list without torch.
 from __future__ import annotations
 
 import json
+import urllib.request
 from pathlib import Path
 from typing import Any, Optional
 
@@ -24,7 +25,7 @@ from config import (
 )
 
 # Files Unsloth/PEFT writes that confirm a usable adapter directory.
-_ADAPTER_MARKERS = ("adapter_config.json", "adapter_model.safetensors", "adapter_model.bin")
+_ADAPTER_MARKERS = ("adapter_config.json", "adapter_model.safetensors", "adapter_model.bin", "domain_knowledge.json")
 
 
 # ---------------------------------------------------------------------------
@@ -102,6 +103,7 @@ def _normalize_run(run_id: str, run_dir: Path, job: dict[str, Any]) -> Optional[
         "created_at": job.get("created_at"),
         "final_loss": _final_loss(metrics),
         "metrics": metrics,
+        "simulated": bool((adapter_dir / "domain_knowledge.json").exists() or manifest.get("simulated")),
     }
 
 
@@ -157,12 +159,46 @@ def list_finetuned() -> list[dict[str, Any]]:
     return out
 
 
+def list_ollama_models() -> list[dict[str, Any]]:
+    """Discover local Ollama models if the Ollama daemon is listening on :11434."""
+    try:
+        with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=1.0) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        models = data.get("models") or []
+    except Exception:
+        return []
+
+    out: list[dict[str, Any]] = []
+    for m in models:
+        name = m.get("name") or m.get("model")
+        if not name:
+            continue
+        details = m.get("details") or {}
+        out.append(
+            {
+                "run_id": None,
+                "kind": "base",
+                "label": f"{name} · OLLAMA",
+                "base_model": f"ollama:{name}",
+                "adapter_dir": None,
+                "training_type": None,
+                "load_in_4bit": False,
+                "max_seq_length": 4096,
+                "min_vram": None,
+                "family": details.get("family") or "ollama",
+                "parameters": details.get("parameter_size"),
+                "backend": "ollama",
+            }
+        )
+    return out
+
+
 def list_base_models() -> list[dict[str, Any]]:
-    """Base foundation models from the Finetune Lab registry."""
+    """Base foundation models: local Ollama models first, then Finetune Lab registry."""
+    out = list_ollama_models()
     models = _read_json(FINETUNE_MODELS_FILE, [])
     if not isinstance(models, list):
-        return []
-    out = []
+        return out
     for m in models:
         out.append(
             {
@@ -195,6 +231,19 @@ def get_target(run_id: Optional[str], base_model: Optional[str]) -> dict[str, An
         raise ValueError(f"No fine-tuned run found with id '{run_id}'.")
 
     if base_model:
+        if base_model.startswith("ollama:"):
+            name = base_model.split("ollama:", 1)[1]
+            return {
+                "run_id": None,
+                "kind": "base",
+                "label": f"{name} · OLLAMA",
+                "base_model": base_model,
+                "adapter_dir": None,
+                "training_type": None,
+                "load_in_4bit": False,
+                "max_seq_length": 4096,
+                "backend": "ollama",
+            }
         # Allow chatting with any base model id directly (registry or arbitrary).
         for b in list_base_models():
             if b["base_model"] == base_model:

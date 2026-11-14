@@ -143,7 +143,7 @@ export default function DashboardPage() {
           {hwError ? (
             <div className="neu-trough p-5 rounded-xl text-center text-red-400 text-xs flex flex-col items-center gap-2">
               <WifiOff size={18} />
-              <span>Cannot reach the backend on :8000.</span>
+              <span>Cannot reach the backend on :8001.</span>
               <span className="text-neu-dim/70 font-mono">{hwError}</span>
             </div>
           ) : gpus?.gpus?.filter((g) => g.vram_total > 0)?.length ? (

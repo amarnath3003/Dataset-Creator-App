@@ -20,6 +20,7 @@ class TrainingRequest(BaseModel):
     dataset_path: str
     training_type: str = "sft"
     num_gpus: int = 1
+    simulate: bool = False
     hyperparameters: Dict[str, Any] = Field(default_factory=dict)
 
 

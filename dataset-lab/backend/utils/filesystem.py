@@ -63,9 +63,14 @@ def get_project_status(project_name: str) -> Optional[Dict[str, Any]]:
     }
 
 
-def save_raw_text(project_name: str, content: str):
+def save_raw_text(project_name: str, content: str, mode: str = "overwrite"):
     path = get_project_path(project_name)
     # Ensure project exists even if not strictly "created" via API first
     path.mkdir(parents=True, exist_ok=True)
-    with open(path / "raw.txt", "w", encoding="utf-8") as f:
-        f.write(content)
+    raw_file = path / "raw.txt"
+    if mode == "append" and raw_file.exists() and raw_file.stat().st_size > 0:
+        with open(raw_file, "a", encoding="utf-8") as f:
+            f.write("\n\n" + content.lstrip("\n"))
+    else:
+        with open(raw_file, "w", encoding="utf-8") as f:
+            f.write(content)

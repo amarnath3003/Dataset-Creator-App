@@ -1,16 +1,25 @@
-from fastapi import APIRouter, File, UploadFile, BackgroundTasks, HTTPException
-from pydantic import BaseModel
-from pathlib import Path
-from backend.utils.filesystem import get_project_path, save_raw_text
-from backend.engines.cleaning import cleaning_engine
-from backend.engines.chunking import chunking_engine
-from backend.engines.embedding_refiner import embedding_refiner
-from backend.engines.generation import generation_engine
-from backend.models import GenerationConfig, PipelineConfig
+import csv
+import io
 import json
 import logging
+import re
+import xml.etree.ElementTree as ET
+import zipfile
+import zlib
+from pathlib import Path
+from typing import List, Optional
 
-# Configure logging
+from bs4 import BeautifulSoup
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, UploadFile
+from pydantic import BaseModel
+
+from backend.engines.chunking import chunking_engine
+from backend.engines.cleaning import cleaning_engine
+from backend.engines.embedding_refiner import embedding_refiner
+from backend.engines.generation import generation_engine
+from backend.models import GenerationConfig, PipelineConfig, RawTextPayload
+from backend.utils.filesystem import get_project_path, save_raw_text
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -21,6 +30,138 @@ class PipelineRunRequest(BaseModel):
     pipeline_config: PipelineConfig
     generation_config: GenerationConfig
     resume: bool = False
+
+
+def _extract_docx_bytes(data: bytes) -> str:
+    try:
+        import docx  # type: ignore
+
+        doc = docx.Document(io.BytesIO(data))
+        return "\n\n".join(p.text for p in doc.paragraphs if p.text.strip())
+    except ImportError:
+        pass
+
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        xml_bytes = zf.read("word/document.xml")
+    root = ET.fromstring(xml_bytes)
+    paragraphs = []
+    for p in root.iter():
+        if p.tag.endswith("}p"):
+            texts = [t.text for t in p.iter() if t.tag.endswith("}t") and t.text]
+            joined = "".join(texts).strip()
+            if joined:
+                paragraphs.append(joined)
+    return "\n\n".join(paragraphs)
+
+
+def _extract_pdf_bytes(data: bytes) -> str:
+    try:
+        import pypdf  # type: ignore
+
+        reader = pypdf.PdfReader(io.BytesIO(data))
+        pages = [page.extract_text() or "" for page in reader.pages]
+        return "\n\n".join(p.strip() for p in pages if p.strip())
+    except ImportError:
+        pass
+
+    try:
+        import fitz  # type: ignore
+
+        doc = fitz.open(stream=data, filetype="pdf")
+        return "\n\n".join(page.get_text("text").strip() for page in doc if page.get_text("text").strip())
+    except ImportError:
+        pass
+
+    # Pure-Python fallback: inflate FlateDecode streams & extract Tj/TJ text operators
+    chunks = []
+    for match in re.finditer(rb"stream[\r\n]+(.*?)[\r\n]+endstream", data, re.DOTALL):
+        raw_stream = match.group(1)
+        for candidate in (raw_stream,):
+            try:
+                decompressed = zlib.decompress(candidate).decode("latin-1", errors="ignore")
+            except Exception:
+                decompressed = candidate.decode("latin-1", errors="ignore")
+            literals = re.findall(r"\(([^()\\]*(?:\\.[^()\\]*)*)\)", decompressed)
+            cleaned = [
+                lit.replace(r"\(", "(").replace(r"\)", ")").replace(r"\\", "\\")
+                for lit in literals
+                if len(lit.strip()) > 1
+            ]
+            if cleaned:
+                chunks.append(" ".join(cleaned))
+    text = "\n\n".join(chunks).strip()
+    if not text:
+        raise ValueError(
+            "Could not extract text from PDF (scanned/encrypted PDF or pypdf not installed)."
+        )
+    return text
+
+
+def _extract_text_from_upload(filename: str, content: bytes) -> str:
+    ext = Path(filename or "document.txt").suffix.lower()
+
+    if ext == ".docx":
+        return _extract_docx_bytes(content)
+
+    if ext == ".pdf":
+        return _extract_pdf_bytes(content)
+
+    decoded = content.decode("utf-8", errors="replace")
+
+    if ext in (".html", ".htm"):
+        soup = BeautifulSoup(decoded, "html.parser")
+        for tag in soup(["script", "style", "noscript"]):
+            tag.decompose()
+        return soup.get_text(separator="\n", strip=True)
+
+    if ext == ".csv":
+        reader = csv.DictReader(io.StringIO(decoded))
+        lines = []
+        for row in reader:
+            parts = [f"{k}: {v}" for k, v in row.items() if v is not None and str(v).strip()]
+            if parts:
+                lines.append(" | ".join(parts))
+        return "\n".join(lines) if lines else decoded
+
+    if ext == ".json":
+        try:
+            obj = json.loads(decoded)
+            if isinstance(obj, list):
+                rows = []
+                for item in obj:
+                    if isinstance(item, dict):
+                        rows.append(
+                            "\n".join(f"{k}: {v}" for k, v in item.items() if v is not None)
+                        )
+                    else:
+                        rows.append(str(item))
+                return "\n\n".join(rows)
+            if isinstance(obj, dict):
+                return json.dumps(obj, indent=2, ensure_ascii=False)
+        except json.JSONDecodeError:
+            pass
+        return decoded
+
+    if ext == ".jsonl":
+        rows = []
+        for line in decoded.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                item = json.loads(line)
+                if isinstance(item, dict):
+                    rows.append(
+                        "\n".join(f"{k}: {v}" for k, v in item.items() if v is not None)
+                    )
+                else:
+                    rows.append(str(item))
+            except json.JSONDecodeError:
+                rows.append(line)
+        return "\n\n".join(rows)
+
+    # .txt, .md, .markdown, .rst, .log, etc.
+    return decoded
 
 
 def _get_qa_count(project_path: Path) -> int:
@@ -58,11 +199,8 @@ def run_pipeline_task(project_name: str, config: PipelineRunRequest):
         existing_qa = []
 
         if config.resume:
-            # ── RESUME MODE ──────────────────────────────────────────────────
-            # Skip cleaning / chunking / refining. Use existing chunks.
             logger.info(f"[{project_name}] Resuming pipeline from partial results...")
 
-            # Load existing partial QA pairs
             partial_path = project_path / "qa_partial.json"
             if partial_path.exists():
                 try:
@@ -71,7 +209,6 @@ def run_pipeline_task(project_name: str, config: PipelineRunRequest):
                 except Exception:
                     existing_qa = []
 
-            # Estimate how many chunks were already processed by looking at progress.json
             progress_path = project_path / "progress.json"
             if progress_path.exists():
                 try:
@@ -80,25 +217,23 @@ def run_pipeline_task(project_name: str, config: PipelineRunRequest):
                 except Exception:
                     resume_from = 0
 
-            # Clean up stop flag so the generation loop won't bail immediately
             for f_name in [".stop", "error.log"]:
                 p = project_path / f_name
                 if p.exists():
                     p.unlink()
 
         else:
-            # ── FRESH RUN ─────────────────────────────────────────────────────
-            # Pre-run cleanup: Delete old results
             for f_name in ["qa_v1.json", "qa_partial.json", "error.log", ".stop"]:
                 path = project_path / f_name
                 if path.exists():
                     path.unlink()
 
-            # 1. Clean
             logger.info(f"[{project_name}] Starting Cleaning...")
             raw_path = project_path / "raw.txt"
             if not raw_path.exists():
                 logger.error(f"[{project_name}] Raw text not found")
+                with open(project_path / "error.log", "w", encoding="utf-8") as f:
+                    f.write("raw.txt not found. Upload or scrape source material first.\n")
                 return
 
             with open(raw_path, "r", encoding="utf-8") as f:
@@ -110,25 +245,27 @@ def run_pipeline_task(project_name: str, config: PipelineRunRequest):
             with open(cleaned_path, "w", encoding="utf-8") as f:
                 f.write(cleaned_text)
 
-            # 2. Chunk
-            logger.info(f"[{project_name}] Starting Chunking...")
+            logger.info(
+                f"[{project_name}] Starting Chunking (method={config.pipeline_config.chunking_method})..."
+            )
             chunks = chunking_engine.chunk(
                 cleaned_text,
                 chunk_size=config.pipeline_config.chunk_size,
                 chunk_overlap=config.pipeline_config.chunk_overlap,
+                method=config.pipeline_config.chunking_method,
             )
 
-            # 3. Refine
             logger.info(f"[{project_name}] Starting Refinement...")
             chunks = embedding_refiner.refine(
-                chunks, threshold=config.pipeline_config.similarity_threshold
+                chunks,
+                threshold=config.pipeline_config.similarity_threshold,
+                max_chunk_tokens=int(config.pipeline_config.chunk_size * 1.5),
             )
 
             chunks_path = project_path / "chunks.json"
             with open(chunks_path, "w", encoding="utf-8") as f:
-                json.dump(chunks, f, indent=2)
+                json.dump(chunks, f, indent=2, ensure_ascii=False)
 
-        # 4. Generate (shared by both paths)
         logger.info(
             f"[{project_name}] Starting Generation (resume_from={resume_from})..."
         )
@@ -153,15 +290,80 @@ def run_pipeline_task(project_name: str, config: PipelineRunRequest):
 
 
 @router.post("/{project_name}/upload")
-async def upload_text(project_name: str, file: UploadFile = File(...)):
+async def upload_text(
+    project_name: str,
+    file: Optional[UploadFile] = File(default=None),
+    files: Optional[List[UploadFile]] = File(default=None),
+    mode: str = Query(default="overwrite"),
+):
+    incoming: List[UploadFile] = []
+    if files:
+        incoming.extend(files)
+    if file is not None:
+        incoming.append(file)
+    if not incoming:
+        raise HTTPException(status_code=400, detail="No file uploaded")
+
+    extracted_parts = []
+    processed_names = []
     try:
-        content = await file.read()
-        # Decode utf-8
-        text = content.decode("utf-8")
-        save_raw_text(project_name, text)
-        return {"message": "Text uploaded successfully"}
+        for uf in incoming:
+            raw_bytes = await uf.read()
+            text = _extract_text_from_upload(uf.filename or "file.txt", raw_bytes)
+            if text.strip():
+                header = f"# Source: {uf.filename}\n\n" if len(incoming) > 1 else ""
+                extracted_parts.append(header + text.strip())
+                processed_names.append(uf.filename)
+
+        if not extracted_parts:
+            raise HTTPException(
+                status_code=400, detail="Uploaded file(s) contained no extractable text."
+            )
+
+        combined = "\n\n---\n\n".join(extracted_parts)
+        save_raw_text(project_name, combined, mode=mode)
+        return {
+            "message": f"Ingested {len(processed_names)} file(s) successfully",
+            "files": processed_names,
+            "chars": len(combined),
+            "mode": mode,
+        }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{project_name}/raw_text")
+def get_raw_text(project_name: str):
+    project_path = get_project_path(project_name)
+    if not project_path.exists():
+        raise HTTPException(status_code=404, detail="Project not found")
+    raw_path = project_path / "raw.txt"
+    if not raw_path.exists():
+        return {"text": "", "chars": 0, "words": 0, "lines": 0}
+    text = raw_path.read_text(encoding="utf-8", errors="replace")
+    return {
+        "text": text,
+        "chars": len(text),
+        "words": len(text.split()),
+        "lines": len(text.splitlines()),
+    }
+
+
+@router.post("/{project_name}/raw_text")
+def update_raw_text(project_name: str, payload: RawTextPayload):
+    if not payload.text.strip():
+        raise HTTPException(status_code=400, detail="Text cannot be empty")
+    save_raw_text(project_name, payload.text, mode=payload.mode)
+    raw_path = get_project_path(project_name) / "raw.txt"
+    text = raw_path.read_text(encoding="utf-8", errors="replace")
+    return {
+        "message": "Raw corpus saved successfully",
+        "chars": len(text),
+        "words": len(text.split()),
+        "lines": len(text.splitlines()),
+    }
 
 
 @router.post("/{project_name}/run")
@@ -185,7 +387,6 @@ def stop_pipeline(project_name: str):
     if not (project_path / ".running").exists():
         return {"message": "No active pipeline to stop"}
 
-    # Create stop flag
     (project_path / ".stop").touch()
     return {"message": "Stop signal sent"}
 
@@ -197,7 +398,6 @@ def get_project_status(project_name: str):
     if not project_path.exists():
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # ── File-based state detection ─────────────────────────────────────────
     running = (project_path / ".running").exists()
     has_qa = (project_path / "qa_v1.json").exists()
     has_error = (project_path / "error.log").exists()
@@ -207,12 +407,8 @@ def get_project_status(project_name: str):
     has_chunks = (project_path / "chunks.json").exists()
 
     stopped = has_partial and not running
-    # finished = pipeline done successfully (has QA, not actively running)
-    # NOTE: we intentionally ignore has_error here — a stale error.log from a
-    # previous partial run must not block the 'Complete' state.
     finished = not running and has_qa
 
-    # ── Optional progress.json ─────────────────────────────────────────────
     progress = None
     progress_path = project_path / "progress.json"
     if progress_path.exists():
@@ -222,31 +418,24 @@ def get_project_status(project_name: str):
             pass
 
     return {
-        # ── canonical aliases ─────────────────────────────────────────────
         "raw": has_raw,
         "cleaned": has_cleaned,
         "chunked": has_chunks,
         "generated": has_qa,
         "error": has_error,
-        # ── has_* aliases (used by frontend) ────────────────────────────
         "has_raw": has_raw,
         "has_cleaned": has_cleaned,
         "has_chunks": has_chunks,
         "has_qa": has_qa,
         "has_error": has_error,
         "has_partial": has_partial,
-        # ── state flags ──────────────────────────────────────────────────
         "running": running,
         "stopped": stopped,
         "finished": finished,
-        # ── counts & progress ────────────────────────────────────────────
         "qa_count": _get_qa_count(project_path),
         "chunk_count": _get_chunk_count(project_path),
         "progress": progress,
     }
-
-
-# ── Read-only data preview endpoints (no pipeline logic) ──────────────────────
 
 
 @router.get("/{project_name}/data/cleaned")

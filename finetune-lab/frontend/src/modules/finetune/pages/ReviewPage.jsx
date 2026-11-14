@@ -54,6 +54,7 @@ export default function ReviewPage() {
   const { draft } = useWizard();
   const { modelId, modelData, datasetPath, datasetName, datasetFormat, trainingConfig, numGpus } = draft;
   const [submitting, setSubmitting] = useState(false);
+  const [simulate, setSimulate] = useState(false);
   const [error, setError] = useState(null);
 
   const missing = !modelId || !datasetPath;
@@ -72,6 +73,7 @@ export default function ReviewPage() {
         dataset_path: datasetPath,
         training_type: trainingConfig.training_type,
         num_gpus: numGpus || 1,
+        simulate,
         hyperparameters: hp,
       });
       navigate(`/finetune/runs/${job.job_id}`);
@@ -135,6 +137,30 @@ export default function ReviewPage() {
             <span>{error || "Missing model or dataset - go back and complete the earlier steps."}</span>
           </div>
         )}
+
+        <div
+          onClick={() => setSimulate((s) => !s)}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setSimulate((s) => !s)}
+          className={`neu-plate p-4 rounded-2xl border cursor-pointer transition-all flex items-center justify-between gap-4 ${
+            simulate ? "border-neu-accent/60 bg-neu-accent/5" : "border-white/5 hover:border-white/15"
+          }`}
+        >
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-xs font-bold text-neu-text uppercase tracking-wider">
+              <span className={`w-2.5 h-2.5 rounded-full ${simulate ? "bg-neu-accent shadow-[0_0_8px_#ff6b00]" : "bg-neu-dim/40"}`} />
+              Simulation / Dry-Run Mode
+              {simulate && <span className="neu-badge neu-badge-accent">Enabled</span>}
+            </div>
+            <p className="text-[11px] text-neu-dim">
+              Runs full telemetry, loss curves, and synthesizes a domain-grounded LoRA adapter package in seconds without downloading multi-GB weights. Great for verifying end-to-end pipelines in Chat Lab.
+            </p>
+          </div>
+          <div className={`w-12 h-6 rounded-full p-1 transition-colors shrink-0 ${simulate ? "bg-neu-accent" : "bg-neu-dark border border-white/10"}`}>
+            <div className={`w-4 h-4 rounded-full bg-white transition-transform ${simulate ? "translate-x-6" : "translate-x-0"}`} />
+          </div>
+        </div>
 
         <div className="flex justify-between items-center gap-3 pt-6 border-t border-white/5">
           <Button onClick={() => navigate("/finetune/new/hardware")} variant="outline" size="lg" className="min-w-[152px]">

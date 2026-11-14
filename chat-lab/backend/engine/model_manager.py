@@ -28,12 +28,31 @@ from typing import Any, Optional
 # ---------------------------------------------------------------------------
 # Capability probe (no hard dependency on torch)
 # ---------------------------------------------------------------------------
+_OLLAMA_CACHE: dict[str, Any] = {"ts": 0.0, "ok": False}
+
+
 def torch_available() -> bool:
     try:
         import torch  # noqa: F401
         return True
     except Exception:
         return False
+
+
+def ollama_available() -> bool:
+    now = time.time()
+    if now - _OLLAMA_CACHE["ts"] < 5.0:
+        return bool(_OLLAMA_CACHE["ok"])
+    ok = False
+    try:
+        import urllib.request
+        with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=0.8) as resp:
+            ok = resp.status == 200
+    except Exception:
+        ok = False
+    _OLLAMA_CACHE["ts"] = now
+    _OLLAMA_CACHE["ok"] = ok
+    return ok
 
 
 def gpu_info() -> dict[str, Any]:
@@ -97,6 +116,8 @@ class ModelManager:
         with self._lock:
             return {
                 "torch_available": torch_available(),
+                "ollama_available": ollama_available(),
+                "sim_available": True,
                 "capacity": self.capacity,
                 "loaded": [m.public() for m in self._models.values()],
                 "gpu": gpu_info(),
@@ -109,13 +130,6 @@ class ModelManager:
     # -- loading / eviction -------------------------------------------------
     def get(self, target: dict[str, Any], min_capacity: int = 1) -> LoadedModel:
         """Return a loaded handle for ``target``, loading + evicting as needed."""
-        if not torch_available():
-            raise RuntimeError(
-                "The ML stack (torch/transformers/unsloth) is not installed in "
-                "this environment, so models cannot be loaded. Install "
-                "chat-lab/backend/requirements.txt on a machine with a GPU."
-            )
-
         key = _target_key(target)
         with self._lock:
             existing = self._models.get(key)
@@ -180,24 +194,56 @@ class ModelManager:
     def _load(self, target: dict[str, Any], key: str) -> LoadedModel:
         t0 = time.time()
         adapter_dir = target.get("adapter_dir")
-        base_model = target.get("base_model")
+        base_model = str(target.get("base_model") or "")
         load_in_4bit = bool(target.get("load_in_4bit", True))
         max_seq_length = int(target.get("max_seq_length", 2048) or 2048)
 
-        # Prefer Unsloth (matches the training stack; loads an adapter dir and
-        # resolves its base from adapter_config.json automatically).
-        try:
-            model, tokenizer = self._load_unsloth(
-                adapter_dir or base_model, max_seq_length, load_in_4bit
+        # 1) Local Ollama backend
+        if base_model.startswith("ollama:") or target.get("backend") == "ollama":
+            model_name = base_model.split("ollama:", 1)[1] if base_model.startswith("ollama:") else base_model
+            now = time.time()
+            return LoadedModel(
+                key=key,
+                target=target,
+                model={"ollama_model": model_name},
+                tokenizer=None,
+                loaded_at=now,
+                last_used=now,
+                load_seconds=now - t0,
+                backend="ollama",
             )
-            backend = "unsloth"
-        except Exception:
-            model, tokenizer = self._load_transformers(
-                adapter_dir, base_model, load_in_4bit
-            )
-            backend = "transformers"
 
-        if getattr(tokenizer, "pad_token", None) is None and getattr(tokenizer, "eos_token", None):
+        # 2) Explicit simulated adapter runs or explicit sim: prefix
+        is_sim = bool(target.get("simulated")) or base_model.startswith("sim:")
+        if adapter_dir and (Path(adapter_dir) / "domain_knowledge.json").exists():
+            is_sim = True
+
+        model = None
+        tokenizer = None
+        backend = "simulator"
+
+        if not is_sim and torch_available():
+            # Prefer Unsloth, fall back to Transformers, and if weights aren't cached/offline,
+            # fall back cleanly to the domain-grounded simulator rather than failing.
+            try:
+                model, tokenizer = self._load_unsloth(
+                    adapter_dir or base_model, max_seq_length, load_in_4bit
+                )
+                backend = "unsloth"
+            except Exception:
+                try:
+                    model, tokenizer = self._load_transformers(
+                        adapter_dir, base_model, load_in_4bit
+                    )
+                    backend = "transformers"
+                except Exception as exc:
+                    model = self._load_sim_knowledge(adapter_dir, target, fallback_reason=str(exc))
+                    backend = "simulator"
+        else:
+            model = self._load_sim_knowledge(adapter_dir, target)
+            backend = "simulator"
+
+        if tokenizer is not None and getattr(tokenizer, "pad_token", None) is None and getattr(tokenizer, "eos_token", None):
             tokenizer.pad_token = tokenizer.eos_token
 
         now = time.time()
@@ -211,6 +257,26 @@ class ModelManager:
             load_seconds=now - t0,
             backend=backend,
         )
+
+    @staticmethod
+    def _load_sim_knowledge(adapter_dir: Optional[str], target: dict[str, Any], fallback_reason: str = "") -> dict[str, Any]:
+        records: list[dict[str, str]] = []
+        if adapter_dir:
+            dk = Path(adapter_dir) / "domain_knowledge.json"
+            if dk.is_file():
+                try:
+                    data = json.loads(dk.read_text(encoding="utf-8"))
+                    if isinstance(data, dict) and isinstance(data.get("records"), list):
+                        records = data["records"]
+                except Exception:
+                    pass
+        return {
+            "simulated": True,
+            "fallback_reason": fallback_reason,
+            "kind": target.get("kind", "base"),
+            "label": target.get("label") or target.get("base_model"),
+            "records": records,
+        }
 
     def _load_unsloth(self, name: str, max_seq_length: int, load_in_4bit: bool):
         from unsloth import FastLanguageModel

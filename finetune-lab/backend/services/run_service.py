@@ -16,6 +16,7 @@ def create_run(req) -> dict[str, Any]:
     run_id = str(uuid.uuid4())
     output_dir = str(RUNS_DIR / run_id)
 
+    hp = req.hyperparameters or {}
     payload = {
         "run_id": run_id,
         "training_type": req.training_type,
@@ -23,7 +24,8 @@ def create_run(req) -> dict[str, Any]:
         "dataset_path": req.dataset_path,
         "output_dir": output_dir,
         "num_gpus": getattr(req, "num_gpus", 1) or 1,
-        "hyperparameters": req.hyperparameters or {},
+        "simulate": bool(getattr(req, "simulate", False) or hp.get("simulate", False)),
+        "hyperparameters": hp,
     }
 
     job_store.create_job(

@@ -4,21 +4,73 @@ import { useToast } from '../components/Toast';
 import { Globe, Search, Play, Square, Settings, RefreshCw, FileText, Image as ImageIcon, Download, Database, Check, Loader2, Zap, X, Cpu } from 'lucide-react';
 import { Slider } from '../components/SettingsPanel';
 import { ProviderBtn, LocalSection, ApiSection } from '../components/LLMSetup';
+import { API_BASE_URL } from '../api/api';
 
-function DryRunSandbox({ previewData, onProcessDataset, isRefining }) {
+function DryRunSandbox({ llmConfig, previewData, onProcessDataset, isRefining }) {
+    const [testing, setTesting] = useState(false);
+    const [dryRunResult, setDryRunResult] = useState('');
     const rawText = previewData?.text
         ? previewData.text.slice(0, 2000) + (previewData.text.length > 2000 ? '\n...' : '')
         : '';
 
+    const handleDryRun = async () => {
+        if (!rawText) return;
+        setTesting(true);
+        setDryRunResult('');
+        try {
+            const res = await fetch(`${API_BASE_URL}/scrape/test_refinement`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    raw_text: rawText.slice(0, 1500),
+                    provider: llmConfig?.provider || 'local',
+                    model_name: llmConfig?.model_name || 'llama3.2',
+                    api_key: llmConfig?.api_key || '',
+                    system_prompt: llmConfig?.prompt || '',
+                }),
+            });
+            const data = await res.json();
+            if (res.ok) {
+                setDryRunResult(data.refined_text || '');
+            } else {
+                setDryRunResult(`Error: ${data.detail || 'Refinement failed'}`);
+            }
+        } catch (err) {
+            setDryRunResult(`Connection error: ${err.message}`);
+        } finally {
+            setTesting(false);
+        }
+    };
+
     return (
         <div className="pt-6 border-t border-white/[0.03] space-y-3">
-            <div className="flex items-center gap-2 text-neu-dim">
-                <FileText size={13} />
-                <h5 className="text-[10px] font-bold tracking-widest uppercase">Dataset Preview</h5>
+            <div className="flex items-center justify-between text-neu-dim">
+                <div className="flex items-center gap-2">
+                    <FileText size={13} />
+                    <h5 className="text-[10px] font-bold tracking-widest uppercase">Dataset Preview &amp; Dry Run</h5>
+                </div>
+                {rawText && (
+                    <button
+                        type="button"
+                        onClick={handleDryRun}
+                        disabled={testing || isRefining}
+                        className="neu-btn-sm text-[10px]"
+                    >
+                        {testing ? <Loader2 size={11} className="animate-spin" /> : <Play size={11} />}
+                        {testing ? 'Testing...' : 'Dry-Run Snippet'}
+                    </button>
+                )}
             </div>
 
-            <div className="neu-inset rounded-xl border border-black/40 min-h-[120px] max-h-[200px] overflow-y-auto custom-scrollbar bg-[#08090a] p-3">
-                {!rawText ? (
+            <div className="neu-inset rounded-xl border border-black/40 min-h-[120px] max-h-[220px] overflow-y-auto custom-scrollbar bg-[#08090a] p-3">
+                {dryRunResult ? (
+                    <div className="space-y-2">
+                        <span className="text-[9px] font-bold uppercase tracking-widest text-green-400">Refined Sample Output</span>
+                        <p className="text-[11px] font-mono whitespace-pre-wrap leading-[1.7] text-neu-text/90">
+                            {dryRunResult}
+                        </p>
+                    </div>
+                ) : !rawText ? (
                     <div className="h-full flex items-center justify-center text-neu-dim/30 text-[9px] uppercase tracking-widest font-bold py-8">
                         Run a scrape job to see a preview here
                     </div>
@@ -42,9 +94,7 @@ function DryRunSandbox({ previewData, onProcessDataset, isRefining }) {
 }
 
 
-
-
-export default function ScrapingDashboard() {
+export default function ScrapingDashboard({ onProceedToPipeline }) {
     const { name } = useParams();
     const toast = useToast();
 
@@ -97,7 +147,7 @@ export default function ScrapingDashboard() {
 
         try {
             const urlList = urls.split('\n').filter(u => u.trim());
-            const response = await fetch(`http://localhost:8000/scrape/start`, {
+            const response = await fetch(`${API_BASE_URL}/scrape/start`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -133,7 +183,7 @@ export default function ScrapingDashboard() {
         setIsRefining(true);
         toast.info("Starting AI Refinement Pipeline...");
         try {
-            const response = await fetch(`http://localhost:8000/scrape/refine`, {
+            const response = await fetch(`${API_BASE_URL}/scrape/refine`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -158,7 +208,7 @@ export default function ScrapingDashboard() {
     const handleCancelScrape = async () => {
         if (!taskId) return;
         try {
-            await fetch(`http://localhost:8000/scrape/cancel/${taskId}`, { method: 'POST' });
+            await fetch(`${API_BASE_URL}/scrape/cancel/${taskId}`, { method: 'POST' });
             setIsScraping(false);
             toast.info('Scraping job cancelled.');
         } catch {
@@ -171,7 +221,7 @@ export default function ScrapingDashboard() {
         if (activeJobId) {
             interval = setInterval(async () => {
                 try {
-                    const res = await fetch(`http://localhost:8000/scrape/status/${activeJobId}`);
+                    const res = await fetch(`${API_BASE_URL}/scrape/status/${activeJobId}`);
                     const data = await res.json();
                     if (res.ok) {
                         setStatus(data);
@@ -188,7 +238,7 @@ export default function ScrapingDashboard() {
                                 toast.success(wasRefining ? 'AI Refinement completed successfully!' : 'Scraping completed successfully.');
                                 // Refresh the preview with the latest data (possibly AI-enhanced)
                                 try {
-                                    const prevRes = await fetch(`http://localhost:8000/scrape/preview/${encodeURIComponent(name)}`);
+                                    const prevRes = await fetch(`${API_BASE_URL}/scrape/preview/${encodeURIComponent(name)}`);
                                     if (prevRes.ok) setPreviewData(await prevRes.json());
                                 } catch (e) { console.error('Preview error', e); }
                             } else {
@@ -224,7 +274,7 @@ export default function ScrapingDashboard() {
     // Initial load check for background tasks (only on mount, never during an active job)
     useEffect(() => {
         if (taskId && !activeJobId && !isScraping && !isRefining && !status) {
-            fetch(`http://localhost:8000/scrape/status/${taskId}`)
+            fetch(`${API_BASE_URL}/scrape/status/${taskId}`)
                 .then(r => r.ok ? r.json() : null)
                 .then(data => {
                     if (!data) return; // Silently skip 404s (server restarted)
@@ -236,7 +286,7 @@ export default function ScrapingDashboard() {
                         setStatus(data);
                         setLogs((data.logs || []).slice(-200));
                         if (data.status === 'completed') {
-                            fetch(`http://localhost:8000/scrape/preview/${encodeURIComponent(name)}`)
+                            fetch(`${API_BASE_URL}/scrape/preview/${encodeURIComponent(name)}`)
                                 .then(r => r.json()).then(setPreviewData).catch(console.error);
                         }
                     }
@@ -245,7 +295,7 @@ export default function ScrapingDashboard() {
     }, [taskId, activeJobId, isScraping, isRefining, status, name]);
 
     const handleDownloadScrape = () => {
-        window.open(`http://localhost:8000/scrape/download/${encodeURIComponent(name)}`, '_blank');
+        window.open(`${API_BASE_URL}/scrape/download/${encodeURIComponent(name)}`, '_blank');
     };
 
     return (
@@ -603,7 +653,7 @@ export default function ScrapingDashboard() {
                                                 className="group relative aspect-square rounded-[14px] overflow-hidden bg-neu-base border border-white/5 shadow-[4px_4px_10px_#111315,-4px_-4px_10px_#2e343b] hover:shadow-[6px_6px_12px_#111315,-6px_-6px_12px_#2e343b] hover:-translate-y-0.5 active:bg-neu-dark active:shadow-[inset_2px_2px_6px_#0e1012,inset_-2px_-2px_6px_#272d33] transition-all duration-200"
                                             >
                                                 <div className="absolute inset-2 rounded-[8px] overflow-hidden border border-black/40 shadow-[inset_1px_1px_3px_rgba(0,0,0,0.5)] bg-neu-dark">
-                                                    <img src={`http://localhost:8000/scrape/image/${name}/${img}`} alt={`scraped ${i}`} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
+                                                    <img src={`${API_BASE_URL}/scrape/image/${name}/${img}`} alt={`scraped ${i}`} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
                                                 </div>
                                                 <div className="absolute inset-0 bg-neu-accent/0 group-hover:bg-neu-accent/10 transition-colors pointer-events-none" />
                                             </button>
@@ -649,7 +699,7 @@ export default function ScrapingDashboard() {
                                 </div>
 
                                 <button
-                                    onClick={() => window.location.reload()}
+                                    onClick={() => (onProceedToPipeline ? onProceedToPipeline() : window.location.reload())}
                                     className="w-full flex items-center justify-center gap-3 px-6 py-4 rounded-[16px] font-bold tracking-widest text-[13px] uppercase transition-all duration-300 bg-[#15181b] text-neu-accent shadow-[inset_2px_2px_4px_#0e1012,inset_-2px_-2px_4px_#272d33,0_0_15px_rgba(255,107,0,0.15)] ring-1 ring-neu-accent/30 hover:drop-shadow-[0_0_8px_rgba(255,107,0,0.6)] hover:-translate-y-0.5"
                                 >
                                     <Play size={15} fill="currentColor" />
@@ -679,7 +729,7 @@ export default function ScrapingDashboard() {
                         </button>
                         <div className="rounded-[16px] overflow-hidden shadow-[inset_2px_2px_8px_rgba(0,0,0,0.6)] bg-black">
                             <img
-                                src={`http://localhost:8000/scrape/image/${name}/${previewImage}`}
+                                src={`${API_BASE_URL}/scrape/image/${name}/${previewImage}`}
                                 alt="quick preview large"
                                 className="max-w-full max-h-[85vh] object-contain rounded-[16px]"
                             />

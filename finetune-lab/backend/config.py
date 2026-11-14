@@ -20,7 +20,7 @@ EXPORTS_FILE = STORAGE_DIR / "exports.json"
 MODELS_FILE = BASE_DIR / "model_registry" / "models.json"
 
 # Dataset Lab exports (sibling project) — surfaced in the dataset picker (Phase 2).
-DATASET_LAB_PROJECTS = REPO_ROOT / "dataset-lab" / "projects"
+DATASET_LAB_PROJECTS = REPO_ROOT / "projects"
 
 
 def ensure_dirs() -> None:

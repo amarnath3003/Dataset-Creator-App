@@ -1,6 +1,6 @@
-import requests
 import os
 from typing import Dict, Any
+import requests
 from .base import LLMProvider
 
 
@@ -9,24 +9,28 @@ class OpenAILLM(LLMProvider):
         self._env_api_key = os.getenv("OPENAI_API_KEY")
 
     def generate(self, prompt: str, config: Dict[str, Any]) -> str:
-        # Prefer frontend-supplied key, then fall back to environment variable
         api_key = config.get("api_key") or self._env_api_key
-        if not api_key:
+        base_url = (
+            config.get("base_url")
+            or os.getenv("OPENAI_BASE_URL")
+            or "https://api.openai.com/v1"
+        ).rstrip("/")
+
+        if not api_key and "api.openai.com" in base_url:
             raise RuntimeError(
                 "OpenAI API key not provided. Set it in Settings or add OPENAI_API_KEY to your .env file."
             )
 
-        url = "https://api.openai.com/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
+        url = f"{base_url}/chat/completions"
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
 
         temperature = config.get("temperature", 0.7)
         top_p = config.get("top_p", 1.0)
 
-        payload = {
-            "model": config.get("model_name", "gpt-4-turbo"),
+        payload: Dict[str, Any] = {
+            "model": config.get("model_name", "gpt-4o-mini"),
             "messages": [{"role": "user", "content": prompt}],
             "temperature": temperature,
             "top_p": top_p,
@@ -40,10 +44,9 @@ class OpenAILLM(LLMProvider):
             payload["presence_penalty"] = config["presence_penalty"]
 
         try:
-            # 5-minute timeout (300 seconds) to prevent infinite thread pool blocking
             response = requests.post(url, headers=headers, json=payload, timeout=300)
             response.raise_for_status()
             data = response.json()
             return data["choices"][0]["message"]["content"]
         except Exception as e:
-            raise RuntimeError(f"Error calling OpenAI: {str(e)}")
+            raise RuntimeError(f"Error calling OpenAI-compatible API ({base_url}): {e}")

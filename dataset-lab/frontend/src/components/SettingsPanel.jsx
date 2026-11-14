@@ -1,7 +1,7 @@
 import React, { useRef, useCallback } from 'react';
-import { Cpu, Globe, ChevronDown } from 'lucide-react';
+import { Cpu, Globe, ChevronDown, Sparkles, Server } from 'lucide-react';
 
-import { OPENAI_MODELS, CustomSelect, ProviderBtn, LocalSection, ApiSection } from './LLMSetup';
+import { OPENAI_MODELS, ANTHROPIC_MODELS, CustomSelect, ProviderBtn, LocalSection, ApiSection, ExtractiveSection } from './LLMSetup';
 
 // ─── Slider ───────────────────────────────────────────────────────────────────
 
@@ -152,8 +152,13 @@ export function Slider({ label, min, max, step, value, onChange, disabled }) {
 export default function SettingsPanel({ pipelineConfig, setPipelineConfig, generationConfig, setGenerationConfig }) {
     const provider = generationConfig.provider ?? 'local';
     const setProvider = (p) => setGenerationConfig(prev => ({
-        ...prev, provider: p,
-        model_name: p === 'openai' ? OPENAI_MODELS[0].id : prev.model_name,
+        ...prev,
+        provider: p,
+        model_name:
+            p === 'openai' ? OPENAI_MODELS[0].id
+                : p === 'anthropic' ? ANTHROPIC_MODELS[0].id
+                    : p === 'extractive' ? 'extractive-synthesizer-v1'
+                        : (prev.model_name === 'extractive-synthesizer-v1' ? 'llama3.2' : prev.model_name),
     }));
 
     return (
@@ -184,6 +189,28 @@ export default function SettingsPanel({ pipelineConfig, setPipelineConfig, gener
                         value={pipelineConfig.similarity_threshold}
                         onChange={v => setPipelineConfig(prev => ({ ...prev, similarity_threshold: v }))}
                     />
+                    <div>
+                        <label className="block text-xs font-bold text-neu-dim tracking-widest uppercase mb-3">Chunking Strategy</label>
+                        <CustomSelect
+                            value={pipelineConfig.chunking_method ?? 'recursive'}
+                            onChange={v => setPipelineConfig(prev => ({ ...prev, chunking_method: v }))}
+                            options={[
+                                { value: 'recursive', label: 'Recursive (Token-Aware)' },
+                                { value: 'markdown', label: 'Markdown Structure-Aware' },
+                                { value: 'semantic', label: 'Semantic Topic Boundary' },
+                                { value: 'sentence', label: 'Sentence Window' },
+                            ]}
+                        />
+                        <p className="text-[10px] font-mono text-neu-dim mt-2">
+                            {pipelineConfig.chunking_method === 'markdown'
+                                ? 'Preserves headings & fenced code blocks across chunks.'
+                                : pipelineConfig.chunking_method === 'semantic'
+                                    ? 'Groups sentences dynamically by local topic similarity.'
+                                    : pipelineConfig.chunking_method === 'sentence'
+                                        ? 'Avoids breaking sentences across boundaries.'
+                                        : 'Balanced hierarchical splitting across paragraphs & sentences.'}
+                        </p>
+                    </div>
                 </div>
             </section>
 
@@ -196,20 +223,34 @@ export default function SettingsPanel({ pipelineConfig, setPipelineConfig, gener
 
                 <div className="neu-plate rounded-2xl overflow-hidden">
                     {/* Provider toggle */}
-                    <div className="flex gap-4 p-5 border-b border-white/[0.03]">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 p-5 border-b border-white/[0.03]">
                         <ProviderBtn
                             active={provider === 'local'}
                             onClick={() => setProvider('local')}
                             icon={Cpu}
-                            label="Local (Ollama)"
-                            sublabel="Free · Runs on your machine"
+                            label="Local"
+                            sublabel="Ollama"
+                        />
+                        <ProviderBtn
+                            active={provider === 'extractive'}
+                            onClick={() => setProvider('extractive')}
+                            icon={Sparkles}
+                            label="Offline"
+                            sublabel="Built-in Engine"
                         />
                         <ProviderBtn
                             active={provider === 'openai'}
                             onClick={() => setProvider('openai')}
                             icon={Globe}
-                            label="OpenAI API"
-                            sublabel="GPT-4o · Requires API key"
+                            label="OpenAI"
+                            sublabel="Or Custom API"
+                        />
+                        <ProviderBtn
+                            active={provider === 'anthropic'}
+                            onClick={() => setProvider('anthropic')}
+                            icon={Server}
+                            label="Anthropic"
+                            sublabel="Claude API"
                         />
                     </div>
 
@@ -217,7 +258,9 @@ export default function SettingsPanel({ pipelineConfig, setPipelineConfig, gener
                     <div className="p-6 border-b border-white/[0.03]">
                         {provider === 'local'
                             ? <LocalSection generationConfig={generationConfig} setGenerationConfig={setGenerationConfig} />
-                            : <ApiSection generationConfig={generationConfig} setGenerationConfig={setGenerationConfig} />
+                            : provider === 'extractive'
+                                ? <ExtractiveSection />
+                                : <ApiSection generationConfig={generationConfig} setGenerationConfig={setGenerationConfig} />
                         }
                     </div>
 
@@ -235,9 +278,12 @@ export default function SettingsPanel({ pipelineConfig, setPipelineConfig, gener
                                 value={generationConfig.format}
                                 onChange={v => setGenerationConfig(prev => ({ ...prev, format: v }))}
                                 options={[
-                                    { value: 'alpaca', label: 'Alpaca' },
-                                    { value: 'sharegpt', label: 'ShareGPT' },
-                                    { value: 'openai', label: 'OpenAI Chat' },
+                                    { value: 'alpaca', label: 'Alpaca (Instruction / Output)' },
+                                    { value: 'sharegpt', label: 'ShareGPT (Human / GPT)' },
+                                    { value: 'openai', label: 'OpenAI Chat (Messages)' },
+                                    { value: 'chatml', label: 'ChatML (Single-Text)' },
+                                    { value: 'dpo', label: 'DPO Preference (Chosen/Rejected)' },
+                                    { value: 'completion', label: 'Completion / CPT Text' },
                                 ]}
                             />
                         </div>

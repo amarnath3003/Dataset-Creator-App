@@ -7,8 +7,29 @@ from backend.models import GenerationConfig
 from backend.llm.base import LLMProvider
 from backend.llm.local import LocalLLM
 from backend.llm.openai import OpenAILLM
+from backend.llm.anthropic_provider import AnthropicLLM
+from backend.llm.extractive import ExtractiveLLM
 
 logger = logging.getLogger(__name__)
+
+
+def _score_qa_quality(question: str, answer: str) -> float:
+    """Compute a 0.0-1.0 heuristic quality score for a generated QA pair."""
+    q = (question or "").strip()
+    a = (answer or "").strip()
+    if not q or not a:
+        return 0.0
+    score = 0.3
+    if len(q) >= 15 and ("?" in q or q.split()[0].lower() in {"explain", "summarize", "describe", "list", "how", "what", "why"}):
+        score += 0.25
+    a_words = len(a.split())
+    if a_words >= 8:
+        score += 0.25
+    elif a_words >= 4:
+        score += 0.1
+    if len(a) >= 40 and a[-1] in ".!?\"'`":
+        score += 0.2
+    return round(min(1.0, score), 2)
 
 
 class GenerationEngine:
@@ -20,6 +41,9 @@ class GenerationEngine:
             "openai": OpenAILLM,
             "ollama": LocalLLM,
             "local": LocalLLM,
+            "anthropic": AnthropicLLM,
+            "extractive": ExtractiveLLM,
+            "offline": ExtractiveLLM,
         }
 
         provider_class = providers.get(config.provider.lower())
@@ -128,6 +152,11 @@ class GenerationEngine:
 
         # Seed with existing partial results when resuming
         qa_results = list(existing_qa) if existing_qa else []
+        seen_questions = {
+            re.sub(r"\W+", " ", str(q.get("question") or q.get("instruction") or "").lower()).strip()
+            for q in qa_results
+            if isinstance(q, dict)
+        }
         chunk_errors = []
         total = len(chunks)
 
@@ -233,7 +262,21 @@ class GenerationEngine:
                 if qas is not None:
                     if isinstance(qas, list):
                         for qa in qas:
+                            if not isinstance(qa, dict):
+                                continue
+                            q_text = str(qa.get("question") or qa.get("instruction") or "").strip()
+                            a_text = str(qa.get("answer") or qa.get("output") or "").strip()
+                            if not q_text or not a_text:
+                                continue
+                            q_norm = re.sub(r"\W+", " ", q_text.lower()).strip()
+                            if q_norm in seen_questions:
+                                continue
+                            seen_questions.add(q_norm)
+                            qa["question"] = q_text
+                            qa["answer"] = a_text
+                            qa.setdefault("input", "")
                             qa["chunk_id"] = chunk["chunk_id"]
+                            qa["quality_score"] = _score_qa_quality(q_text, a_text)
                             qa_results.append(qa)
                         # ── Incremental save after every successful chunk ──
                         self._atomic_write_json(qa_path, qa_results)

@@ -14,7 +14,7 @@ from typing import Any
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from config import DATASETS_DIR, ensure_dirs
+from config import DATASET_LAB_PROJECTS, DATASETS_DIR, ensure_dirs
 from core.dataset_engine.detector import DatasetDetector
 
 router = APIRouter()
@@ -22,7 +22,7 @@ router = APIRouter()
 HF_API = "https://huggingface.co/api"
 
 SUPPORTED = {".jsonl", ".json", ".csv", ".parquet"}
-PREVIEW_ROWS = 3
+PREVIEW_ROWS = 5
 
 
 def _inspect(path: Path) -> dict[str, Any]:
@@ -68,9 +68,14 @@ def _inspect(path: Path) -> dict[str, Any]:
 
     elif suffix == ".csv":
         with open(path, "r", encoding="utf-8", newline="") as f:
-            reader = csv.reader(f)
-            columns = next(reader, []) or []
-            rows = sum(1 for _ in reader)
+            reader = csv.DictReader(f)
+            columns = list(reader.fieldnames or [])
+            count = 0
+            for row in reader:
+                count += 1
+                if count <= PREVIEW_ROWS:
+                    preview.append(dict(row))
+            rows = count
 
     else:  # .parquet — avoid heavy deps; report unknown row count
         rows = None
@@ -86,11 +91,71 @@ def _split_id(name: str) -> tuple[str, str]:
     return name, name
 
 
+def _safe_slug(text: str) -> str:
+    import re
+
+    slug = re.sub(r"[^A-Za-z0-9.-]+", "-", text).strip("-.")
+    return slug or "project"
+
+
+def _sync_dataset_lab_projects() -> None:
+    """Auto-discover Dataset Lab projects and mirror their QA/export datasets."""
+    if not DATASET_LAB_PROJECTS.is_dir():
+        return
+
+    for proj_dir in sorted(DATASET_LAB_PROJECTS.iterdir()):
+        if not proj_dir.is_dir():
+            continue
+        proj_slug = _safe_slug(proj_dir.name)
+
+        # 1) Sync raw generated/edited qa_v1.json -> Instruction JSONL
+        qa_path = proj_dir / "qa_v1.json"
+        if qa_path.is_file():
+            target = DATASETS_DIR / f"dslab-{proj_slug}-qa_{proj_dir.name}_qa.jsonl"
+            if not target.exists() or qa_path.stat().st_mtime > target.stat().st_mtime:
+                try:
+                    raw = json.loads(qa_path.read_text(encoding="utf-8"))
+                    if isinstance(raw, list) and raw:
+                        lines = []
+                        for item in raw:
+                            if not isinstance(item, dict):
+                                continue
+                            instr = str(item.get("question") or item.get("instruction") or "").strip()
+                            out = str(item.get("answer") or item.get("output") or "").strip()
+                            inp = str(item.get("input") or "").strip()
+                            if instr and out:
+                                lines.append(
+                                    json.dumps(
+                                        {"instruction": instr, "input": inp, "output": out},
+                                        ensure_ascii=False,
+                                    )
+                                )
+                        if lines:
+                            target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                except Exception:
+                    pass
+
+        # 2) Sync exported JSONL files inside projects/<name>/exports/
+        exports_dir = proj_dir / "exports"
+        if exports_dir.is_dir():
+            for exp_file in sorted(exports_dir.glob("*.jsonl")):
+                if not exp_file.is_file() or exp_file.stat().st_size == 0:
+                    continue
+                exp_slug = _safe_slug(exp_file.stem)
+                target = DATASETS_DIR / f"dslab-{proj_slug}-{exp_slug}_{proj_dir.name}_{exp_file.name}"
+                if not target.exists() or exp_file.stat().st_mtime > target.stat().st_mtime:
+                    try:
+                        target.write_bytes(exp_file.read_bytes())
+                    except Exception:
+                        pass
+
+
 @router.get("/")
 def list_datasets():
     ensure_dirs()
+    _sync_dataset_lab_projects()
     items = []
-    for p in sorted(DATASETS_DIR.glob("*")):
+    for p in sorted(DATASETS_DIR.glob("*"), key=lambda x: x.stat().st_mtime, reverse=True):
         if not p.is_file() or p.suffix.lower() not in SUPPORTED:
             continue
         ds_id, name = _split_id(p.name)
@@ -104,10 +169,29 @@ def list_datasets():
                 "name": name,
                 "path": str(p),
                 "size_bytes": p.stat().st_size,
+                "source": "dataset-lab" if ds_id.startswith("dslab-") else "local",
                 **meta,
             }
         )
     return {"datasets": items}
+
+
+@router.delete("/{dataset_id}")
+def delete_dataset(dataset_id: str):
+    ensure_dirs()
+    clean_id = Path(dataset_id).name
+    if not clean_id or clean_id != dataset_id:
+        raise HTTPException(status_code=400, detail="Invalid dataset id.")
+    matches = [
+        p
+        for p in DATASETS_DIR.iterdir()
+        if p.is_file() and (p.name.startswith(f"{clean_id}_") or p.name == clean_id)
+    ]
+    if not matches:
+        raise HTTPException(status_code=404, detail="Dataset not found.")
+    for p in matches:
+        p.unlink(missing_ok=True)
+    return {"ok": True, "deleted": clean_id, "files": [m.name for m in matches]}
 
 
 @router.post("/upload")

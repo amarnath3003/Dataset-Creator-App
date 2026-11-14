@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "../../../components/Button";
-import { Database, Upload, Check, Loader2, AlertTriangle, FileJson, Download } from "lucide-react";
+import { Database, Upload, Check, Loader2, AlertTriangle, FileJson, Download, Trash2, Sparkles } from "lucide-react";
 import { datasetApi } from "../services/datasetApi";
 import { useWizard } from "../context/WizardContext";
 import { useHfSearch } from "../hooks/useHfSearch";
@@ -25,6 +25,8 @@ export default function DatasetSelectionPage() {
   const [datasets, setDatasets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
   const [error, setError] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [source, setSource] = useState("uploaded");
@@ -65,6 +67,26 @@ export default function DatasetSelectionPage() {
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleDelete = async (e, ds) => {
+    e.stopPropagation();
+    if (confirmDeleteId !== ds.id) {
+      setConfirmDeleteId(ds.id);
+      return;
+    }
+    setDeletingId(ds.id);
+    setError(null);
+    try {
+      await datasetApi.remove(ds.id);
+      if (selectedId === ds.id) setSelectedId(null);
+      setConfirmDeleteId(null);
+      await refresh();
+    } catch (err) {
+      setError(err.message || "Failed to delete dataset.");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -198,12 +220,36 @@ export default function DatasetSelectionPage() {
                       isSelected ? "console-select-card-active border-black/40" : "border-white/5"
                     }`}
                   >
-                    {isSelected && (
-                      <div className="absolute top-4 right-4 text-neu-accent">
-                        <Check size={18} />
-                      </div>
-                    )}
-                    {formatBadge(ds.format)}
+                    <div className="absolute top-4 right-4 flex items-center gap-2">
+                      {isSelected && <Check size={18} className="text-neu-accent" />}
+                      <button
+                        type="button"
+                        onClick={(e) => handleDelete(e, ds)}
+                        disabled={deletingId === ds.id}
+                        title={confirmDeleteId === ds.id ? "Click again to confirm delete" : "Delete dataset"}
+                        className={`px-2 py-1 rounded-lg text-[10px] font-mono uppercase transition-colors ${
+                          confirmDeleteId === ds.id
+                            ? "bg-red-500/20 text-red-300 border border-red-500/40"
+                            : "text-neu-dim/60 hover:text-red-400 hover:bg-red-500/10"
+                        }`}
+                      >
+                        {deletingId === ds.id ? (
+                          <Loader2 size={13} className="animate-spin" />
+                        ) : confirmDeleteId === ds.id ? (
+                          "Confirm?"
+                        ) : (
+                          <Trash2 size={13} />
+                        )}
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 pr-16">
+                      {formatBadge(ds.format)}
+                      {ds.source === "dataset-lab" && (
+                        <span className="neu-badge bg-amber-500/15 text-amber-300 border-amber-500/30 flex items-center gap-1">
+                          <Sparkles size={10} /> Dataset Lab
+                        </span>
+                      )}
+                    </div>
                     <div>
                       <h3 className={`text-lg font-bold transition-colors break-all ${isSelected ? "text-neu-accent" : "text-neu-dim group-hover:text-neu-text"}`}>{ds.name}</h3>
                       <p className="text-sm text-neu-dim/70 mt-2">
@@ -238,16 +284,43 @@ export default function DatasetSelectionPage() {
           ))}
 
         {selected && (
-          <div className="neu-plate p-5 rounded-2xl space-y-3">
-            <div className="flex items-center gap-2 text-neu-text font-bold text-sm">
-              <FileJson size={16} className="text-neu-accent" />
-              {selected.name}
+          <div className="neu-plate p-5 rounded-2xl space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-neu-text font-bold text-sm">
+                <FileJson size={16} className="text-neu-accent" />
+                {selected.name}
+              </div>
+              {selected.source === "dataset-lab" && (
+                <span className="neu-badge bg-amber-500/15 text-amber-300 border-amber-500/30">Synced from Dataset Lab</span>
+              )}
             </div>
             <div className="flex flex-wrap gap-2 text-[10px] font-mono uppercase tracking-widest text-neu-dim">
               <span className="bg-neu-dark/60 px-2 py-1 rounded-md border border-white/5">Format: {FORMAT_LABEL[selected.format] || selected.format}</span>
               <span className="bg-neu-dark/60 px-2 py-1 rounded-md border border-white/5">Rows: {selected.rows ?? "?"}</span>
               {selected.columns?.length > 0 && <span className="bg-neu-dark/60 px-2 py-1 rounded-md border border-white/5">Columns: {selected.columns.join(", ")}</span>}
             </div>
+            {Array.isArray(selected.preview) && selected.preview.length > 0 && (
+              <div className="space-y-2 pt-2 border-t border-white/5">
+                <div className="text-[10px] font-mono uppercase tracking-widest text-neu-dim">
+                  Sample Rows Preview ({selected.preview.length})
+                </div>
+                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                  {selected.preview.slice(0, 5).map((row, idx) => (
+                    <div key={idx} className="neu-trough p-3 rounded-xl space-y-1.5 text-xs">
+                      {Object.entries(row).map(([k, v]) => {
+                        const text = typeof v === "string" ? v : JSON.stringify(v);
+                        return (
+                          <div key={k} className="grid grid-cols-[96px_1fr] gap-2 items-start">
+                            <span className="font-mono text-[10px] uppercase text-neu-accent/90 truncate">{k}</span>
+                            <span className="text-neu-dim break-words line-clamp-2">{text}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {selectedUnsupported && (
               <div className="neu-alert-warn">
                 <AlertTriangle size={16} />

@@ -11,6 +11,11 @@ export const OPENAI_MODELS = [
     { id: 'gpt-3.5-turbo', label: 'Economy' },
 ];
 
+export const ANTHROPIC_MODELS = [
+    { id: 'claude-3-5-sonnet-latest', label: 'Balanced' },
+    { id: 'claude-3-5-haiku-latest', label: 'Fast · Cheap' },
+];
+
 export function CustomSelect({ value, options, onChange }) {
     const [isOpen, setIsOpen] = useState(false);
     const containerRef = useRef(null);
@@ -183,19 +188,23 @@ export function LocalSection({ generationConfig, setGenerationConfig }) {
 
 export function ApiSection({ generationConfig, setGenerationConfig }) {
     const [showKey, setShowKey] = useState(false);
-    const set = (key, val) => setGenerationConfig(prev => ({ ...prev, [key]: val, provider: 'openai' }));
+    const provider = generationConfig.provider === 'anthropic' ? 'anthropic' : 'openai';
+    const set = (key, val) => setGenerationConfig(prev => ({ ...prev, [key]: val, provider }));
+    const modelPresets = provider === 'anthropic' ? ANTHROPIC_MODELS : OPENAI_MODELS;
 
     return (
         <div className="space-y-6">
             {/* API Key */}
             <div>
-                <label className="block text-xs font-bold text-neu-dim tracking-widest uppercase mb-3">OpenAI API Key</label>
+                <label className="block text-xs font-bold text-neu-dim tracking-widest uppercase mb-3">
+                    {provider === 'anthropic' ? 'Anthropic API Key' : 'OpenAI / Compatible API Key'}
+                </label>
                 <div className="relative">
                     <input
                         type={showKey ? 'text' : 'password'}
                         value={generationConfig.api_key ?? ''}
                         onChange={e => set('api_key', e.target.value)}
-                        placeholder="sk-..."
+                        placeholder={provider === 'anthropic' ? 'sk-ant-...' : 'sk-...'}
                         className="neu-input pr-20 font-mono text-sm"
                     />
                     <button
@@ -209,11 +218,26 @@ export function ApiSection({ generationConfig, setGenerationConfig }) {
                 <p className="text-[10px] font-mono text-neu-dim mt-2">Key is kept only in browser memory — never persisted to disk.</p>
             </div>
 
+            {provider === 'openai' && (
+                <div>
+                    <label className="block text-[10px] font-bold text-neu-dim tracking-widest uppercase mb-2">
+                        Custom Base URL (Optional — Groq, OpenRouter, Together, LM Studio)
+                    </label>
+                    <input
+                        type="text"
+                        value={generationConfig.base_url ?? ''}
+                        onChange={e => set('base_url', e.target.value)}
+                        placeholder="https://api.openai.com/v1"
+                        className="neu-input text-xs font-mono"
+                    />
+                </div>
+            )}
+
             {/* Model picker */}
             <div>
                 <label className="block text-xs font-bold text-neu-dim tracking-widest uppercase mb-3">Model</label>
                 <div className="grid grid-cols-2 gap-3">
-                    {OPENAI_MODELS.map(m => {
+                    {modelPresets.map(m => {
                         const active = generationConfig.model_name === m.id;
                         return (
                             <button
@@ -228,14 +252,13 @@ export function ApiSection({ generationConfig, setGenerationConfig }) {
                                     transition: 'transform 0.1s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.1s cubic-bezier(0.4, 0, 0.2, 1), background 0.15s ease'
                                 }}
                             >
-                                <span className={`font-mono text-[13px] font-bold transition-colors duration-150 ${active ? 'text-neu-accent drop-shadow-[0_0_8px_rgba(255,107,0,0.4)]' : 'text-neu-text'}`}>
+                                <span className={`font-mono text-[13px] font-bold transition-colors duration-150 truncate w-full pr-4 ${active ? 'text-neu-accent drop-shadow-[0_0_8px_rgba(255,107,0,0.4)]' : 'text-neu-text'}`}>
                                     {m.id}
                                 </span>
                                 <span className={`text-[9px] font-mono uppercase tracking-wide transition-colors duration-150 ${active ? 'text-neu-accent/70' : 'text-neu-dim/70'}`}>
                                     {m.label}
                                 </span>
 
-                                {/* Status LED */}
                                 <div className={`absolute top-4 right-4 w-2 h-2 rounded-full transition-all duration-200 ${active
                                     ? 'bg-neu-accent shadow-[0_0_10px_rgba(255,107,0,1)]'
                                     : 'bg-black/40 shadow-[inset_1px_1px_2px_#000]'
@@ -250,13 +273,29 @@ export function ApiSection({ generationConfig, setGenerationConfig }) {
                     <label className="block text-[10px] font-bold text-neu-dim tracking-widest uppercase mb-2">Custom Model ID</label>
                     <input
                         type="text"
-                        value={OPENAI_MODELS.some(m => m.id === generationConfig.model_name) ? '' : generationConfig.model_name}
+                        value={modelPresets.some(m => m.id === generationConfig.model_name) ? '' : (generationConfig.model_name ?? '')}
                         onChange={e => set('model_name', e.target.value)}
-                        placeholder="e.g. gpt-4-vision-preview"
+                        placeholder={provider === 'anthropic' ? 'claude-3-5-sonnet-20241022' : 'e.g. llama-3.3-70b-versatile'}
                         className="neu-input text-sm"
                     />
                 </div>
             </div>
+        </div>
+    );
+}
+
+export function ExtractiveSection() {
+    return (
+        <div className="neu-trough p-5 rounded-xl space-y-2">
+            <div className="flex items-center gap-3">
+                <div className="led led-green animate-pulse" />
+                <span className="text-xs font-bold uppercase tracking-widest text-green-400">
+                    Offline Extractive Synthesizer Ready
+                </span>
+            </div>
+            <p className="text-xs text-neu-dim leading-relaxed font-mono">
+                Generates factual Q&amp;A and DPO preference pairs locally from document structure, headings, definitions, and bullet lists with zero external LLM dependencies.
+            </p>
         </div>
     );
 }

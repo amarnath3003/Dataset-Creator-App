@@ -247,12 +247,220 @@ def _run_subprocess(payload: dict[str, Any], sink, num_gpus: int) -> dict[str, A
     return {"run_id": run_id, "status": final.get("status", "failed")}
 
 
+def _extract_domain_records(dataset_path: str, limit: int = 200) -> list[dict[str, str]]:
+    """Read local JSONL/JSON/CSV dataset records into normalized prompt/response pairs."""
+    p = Path(dataset_path)
+    records: list[dict[str, str]] = []
+    if not p.is_file():
+        return records
+
+    def _push(obj: dict[str, Any]) -> None:
+        if not isinstance(obj, dict):
+            return
+        if "messages" in obj and isinstance(obj["messages"], list):
+            u = next((m.get("content", "") for m in obj["messages"] if m.get("role") == "user"), "")
+            a = next((m.get("content", "") for m in obj["messages"] if m.get("role") == "assistant"), "")
+            if u or a:
+                records.append({"question": str(u), "answer": str(a)})
+            return
+        q = obj.get("instruction") or obj.get("question") or obj.get("prompt") or ""
+        inp = obj.get("input") or ""
+        a = obj.get("output") or obj.get("answer") or obj.get("chosen") or obj.get("response") or obj.get("text") or ""
+        if inp and q:
+            q = f"{q}\n{inp}"
+        if q or a:
+            records.append({"question": str(q), "answer": str(a)})
+
+    suffix = p.suffix.lower()
+    try:
+        if suffix == ".jsonl":
+            with open(p, "r", encoding="utf-8") as f:
+                for line in f:
+                    if len(records) >= limit:
+                        break
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        _push(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+        elif suffix == ".json":
+            data = json.loads(p.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                for item in data[:limit]:
+                    _push(item)
+            elif isinstance(data, dict):
+                _push(data)
+        elif suffix == ".csv":
+            import csv
+
+            with open(p, "r", encoding="utf-8", newline="") as f:
+                for i, row in enumerate(csv.DictReader(f)):
+                    if i >= limit:
+                        break
+                    _push(row)
+    except Exception:
+        pass
+    return records
+
+
+def _run_simulated_training(payload: dict[str, Any], sink) -> dict[str, Any]:
+    """Fast, hardware-independent training simulation that produces a real adapter package."""
+    import math
+    import time
+    from datetime import datetime, timezone
+    from job_engine import job_store
+
+    run_id = payload["run_id"]
+    training_type = (payload.get("training_type") or "sft").lower()
+    hp = payload.get("hyperparameters") or {}
+    model_name = payload["model_name"]
+    output_dir = Path(payload["output_dir"])
+    final_dir = output_dir / "final"
+    final_dir.mkdir(parents=True, exist_ok=True)
+
+    load_in_4bit = quant_for(training_type, hp)
+    max_seq_len = int(hp.get("max_seq_length", 2048) or 2048)
+    lora_rank = int(hp.get("lora_rank", 16) or 16)
+    lora_alpha = int(hp.get("lora_alpha", 16) or 16)
+    lora_dropout = float(hp.get("lora_dropout", 0.0) or 0.0)
+    epochs = float(hp.get("epochs", 1 if training_type == _CPT else 3) or 3)
+    lr = float(hp.get("learning_rate", 2e-4) or 2e-4)
+
+    sink.emit({"type": "job_started", "run_id": run_id})
+    sink.emit({
+        "type": "warning",
+        "run_id": run_id,
+        "message": "Simulation / Dry-Run Mode active: training telemetry & domain adapter artifacts synthesized without heavyweight weights.",
+    })
+    sink.emit({
+        "type": "model_loading",
+        "run_id": run_id,
+        "model_name": model_name,
+        "load_in_4bit": load_in_4bit,
+        "max_seq_length": max_seq_len,
+    })
+    sink.emit({
+        "type": "peft_configured",
+        "run_id": run_id,
+        "lora_rank": lora_rank,
+        "lora_alpha": lora_alpha,
+        "lora_dropout": lora_dropout,
+        "load_in_4bit": load_in_4bit,
+        "use_rslora": bool(hp.get("use_rslora", False)),
+    })
+
+    records = _extract_domain_records(payload["dataset_path"], limit=200)
+    rows_count = max(1, len(records))
+    sink.emit({
+        "type": "dataset_loaded",
+        "run_id": run_id,
+        "rows": rows_count,
+        "columns": ["instruction", "input", "output"] if records else ["text"],
+    })
+    sink.emit({"type": "dataset_formatted", "run_id": run_id, "rows": rows_count, "field": "text"})
+
+    total_steps = 12
+    sink.emit({"type": "train_begin", "run_id": run_id, "total_steps": total_steps, "vram_mb": 3420})
+
+    final_loss = 2.18
+    cancelled = False
+    for step in range(1, total_steps + 1):
+        job_now = job_store.get_job(run_id) or {}
+        if job_now.get("status") == "cancelling":
+            sink.emit({"type": "cancelled", "run_id": run_id})
+            cancelled = True
+            break
+
+        frac = step / total_steps
+        loss = 0.44 + 1.74 * math.exp(-2.6 * frac) + 0.02 * math.sin(step * 1.7)
+        final_loss = round(loss, 4)
+        cur_lr = round(lr * (0.5 * (1.0 + math.cos(math.pi * frac))), 7)
+        sink.emit({
+            "type": "metrics",
+            "run_id": run_id,
+            "global_step": step,
+            "max_steps": total_steps,
+            "loss": final_loss,
+            "learning_rate": cur_lr,
+            "epoch": round(epochs * frac, 2),
+            "tokens_per_second": round(380.0 + step * 6.5, 1),
+            "eta_seconds": max(0, round((total_steps - step) * 0.25)),
+            "vram_mb": 3420 + (step % 3) * 48,
+        })
+        time.sleep(0.18)
+
+    sink.emit({"type": "saving", "run_id": run_id, "path": str(final_dir)})
+
+    adapter_cfg = {
+        "peft_type": "LORA",
+        "task_type": "CAUSAL_LM",
+        "base_model_name_or_path": model_name,
+        "r": lora_rank,
+        "lora_alpha": lora_alpha,
+        "lora_dropout": lora_dropout,
+        "simulated": True,
+        "training_type": training_type,
+    }
+    (final_dir / "adapter_config.json").write_text(json.dumps(adapter_cfg, indent=2), encoding="utf-8")
+    (final_dir / "adapter_model.bin").write_bytes(b"SIMULATED_LORA_ADAPTER_V1\n")
+    (final_dir / "domain_knowledge.json").write_text(
+        json.dumps(
+            {
+                "model_name": model_name,
+                "training_type": training_type,
+                "dataset_path": payload["dataset_path"],
+                "records": records,
+            },
+            indent=2,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    metrics = {
+        "train_loss": final_loss,
+        "train_steps": total_steps if not cancelled else step,
+        "train_runtime": round(total_steps * 0.18, 2),
+        "simulated": True,
+    }
+    manifest = {
+        "run_id": run_id,
+        "model_name": model_name,
+        "simulated": True,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "config": {
+            "model_name": model_name,
+            "dataset_source": payload["dataset_path"],
+            "training_type": training_type,
+            "load_in_4bit": load_in_4bit,
+            "max_seq_length": max_seq_len,
+            "lora_rank": lora_rank,
+            "epochs": epochs,
+        },
+        "metrics": metrics,
+    }
+    (output_dir / "run_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    (output_dir / "training_summary.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+
+    sink.emit({
+        "type": "job_succeeded",
+        "run_id": run_id,
+        "metrics": metrics,
+        "final_checkpoint": str(final_dir),
+    })
+    return {"run_id": run_id, "status": "cancelled" if cancelled else "completed"}
+
+
 def run_training_job(payload: dict[str, Any]) -> dict[str, Any]:
     from training.job_store_sink import JobStoreSink
 
     run_id = payload["run_id"]
     training_type = (payload.get("training_type") or "sft").lower()
     num_gpus = int(payload.get("num_gpus") or 1)
+    hp = payload.get("hyperparameters") or {}
+    simulate = bool(payload.get("simulate") or hp.get("simulate"))
     sink = JobStoreSink(run_id)
 
     try:
@@ -260,6 +468,9 @@ def run_training_job(payload: dict[str, Any]) -> dict[str, Any]:
             raise NotImplementedError(f"Training type '{training_type}' is not implemented yet.")
         if training_type not in _KNOWN:
             raise ValueError(f"Unknown training type '{training_type}'.")
+
+        if simulate:
+            return _run_simulated_training(payload, sink)
 
         return _run_subprocess(payload, sink, num_gpus)
 

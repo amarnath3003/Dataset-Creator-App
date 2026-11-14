@@ -1,7 +1,8 @@
 import json
+import re
 from pathlib import Path
-from fastapi import HTTPException
 from typing import Dict, Any
+from fastapi import HTTPException
 
 
 class Exporter:
@@ -14,8 +15,42 @@ class Exporter:
         with open(self.formats_path, "r", encoding="utf-8") as f:
             return json.load(f)
 
-    def export(self, project_path: Path, format: str):
+    def _normalize_item(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        question = item.get("question") or item.get("instruction") or ""
+        answer = item.get("answer") or item.get("output") or ""
+        inp = item.get("input") or ""
+        rejected = item.get("rejected") or "The requested detail is not supported by the source material."
+        return {
+            **item,
+            "question": question,
+            "answer": answer,
+            "instruction": question,
+            "output": answer,
+            "input": inp,
+            "rejected": rejected,
+        }
+
+    def export(
+        self,
+        project_path: Path,
+        format: str,
+        target_path: Path | None = None,
+    ) -> Path:
         qa_path = project_path / "qa_v1.json"
+        chunks_path = project_path / "chunks.json"
+
+        # Support exporting raw chunks in 'completion' mode even without QA pairs
+        if format == "completion" and not qa_path.exists() and chunks_path.exists():
+            chunks = json.loads(chunks_path.read_text(encoding="utf-8"))
+            export_dir = project_path / "exports"
+            export_dir.mkdir(parents=True, exist_ok=True)
+            export_path = target_path or (export_dir / f"{project_path.name}_completion.jsonl")
+            with open(export_path, "w", encoding="utf-8") as f:
+                for c in chunks:
+                    text = c.get("text", "") if isinstance(c, dict) else str(c)
+                    if text.strip():
+                        f.write(json.dumps({"text": text.strip()}, ensure_ascii=False) + "\n")
+            return export_path
 
         if not qa_path.exists():
             raise HTTPException(
@@ -36,34 +71,31 @@ class Exporter:
             )
 
         with open(qa_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+            raw_data = json.load(f)
+
+        data = [self._normalize_item(item) for item in raw_data if isinstance(item, dict)]
 
         export_type = formats[format].get("type", "jsonl")
         export_ext = "json" if export_type == "json" else "jsonl"
-        import uuid
-        export_path = project_path / f"export_{format}_{uuid.uuid4().hex[:8]}.{export_ext}"
+        export_dir = project_path / "exports"
+        export_dir.mkdir(parents=True, exist_ok=True)
+        export_path = target_path or (export_dir / f"{project_path.name}_{format}.{export_ext}")
 
         with open(export_path, "w", encoding="utf-8") as f:
             if export_type == "json":
-                # JSON array output
                 transformed_data = [self._transform(template, item) for item in data]
-                json.dump(transformed_data, f, indent=2)
+                json.dump(transformed_data, f, indent=2, ensure_ascii=False)
             else:
-                # Default to JSONL output
                 for item in data:
                     transformed_item = self._transform(template, item)
-                    f.write(json.dumps(transformed_item) + "\n")
+                    f.write(json.dumps(transformed_item, ensure_ascii=False) + "\n")
 
         return export_path
 
-    def _transform(self, template: Any, data: Dict[str, str]) -> Any:
+    def _transform(self, template: Any, data: Dict[str, Any]) -> Any:
         if isinstance(template, str):
             val = template
-            # Safely replace any format string placeholder present in the item dictionary
-            # Example: '{question}' -> data['question']
-            import re
-
-            placeholders = re.findall(r"\{(.*?)\}", val)
+            placeholders = re.findall(r"\{([a-zA-Z0-9_]+)\}", val)
             for p in placeholders:
                 if p in data:
                     val = val.replace(f"{{{p}}}", str(data[p]))

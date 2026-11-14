@@ -19,7 +19,11 @@ from backend.engines.scraping.text_scraper import (
 )
 from backend.engines.scraping.image_scraper import extract_image_urls, download_image
 from backend.engines.processing.cleaner import clean_text_content, sanitize_url
-from backend.engines.processing.deduplicator import get_text_hash, is_near_duplicate
+from backend.engines.processing.deduplicator import (
+    get_image_hash,
+    get_text_hash,
+    is_near_duplicate,
+)
 from backend.engines.labeling.auto_labeler import auto_label_content
 from backend.engines.scraping.refinement import refine_text_with_llm
 from backend.utils.filesystem import get_project_path
@@ -264,19 +268,54 @@ async def process_scrape_task(task_id: str, request: ScrapeRequest):
 
                     if request.extract_images:
                         images = extract_image_urls(html_content, url)
-                        job_state["logs"].append(f"Found {len(images)} images.")
-                        for img in images:
-                            if job_state.get("is_cancelled", False):
-                                break
+                        job_state["logs"].append(f"Found {len(images)} candidate images.")
+                        seen_phashes = job_state.setdefault("_seen_phashes", set())
+                        meta_path = os.path.join(scraped_dir, "images_metadata.jsonl")
 
+                        async def _fetch_img(img_info):
+                            saved_path = await download_image(img_info["url"], image_dir, session)
+                            return img_info, saved_path
+
+                        # Download up to 4 images concurrently per page
+                        sem = asyncio.Semaphore(4)
+
+                        async def _bounded_fetch(img_info):
+                            async with sem:
+                                return await _fetch_img(img_info)
+
+                        results = await asyncio.gather(
+                            *[_bounded_fetch(img_info) for img_info in images[:24]],
+                            return_exceptions=True,
+                        )
+                        for res in results:
+                            if isinstance(res, Exception) or not res:
+                                continue
+                            img_info, saved_path = res
+                            if not saved_path:
+                                continue
+                            phash = await asyncio.to_thread(get_image_hash, saved_path)
+                            if phash and phash in seen_phashes:
+                                try:
+                                    os.remove(saved_path)
+                                except OSError:
+                                    pass
+                                job_state["duplicates_found"] += 1
+                                continue
+                            if phash:
+                                seen_phashes.add(phash)
+                            job_state["downloaded_items"] += 1
+                            fname = os.path.basename(saved_path)
+                            job_state["logs"].append(f"Downloaded image: {fname}")
                             try:
-                                saved_path = await download_image(
-                                    img["url"], image_dir, session
-                                )
-                                if saved_path:
-                                    job_state["downloaded_items"] += 1
-                                    job_state["logs"].append(
-                                        f"Downloaded image: {os.path.basename(saved_path)}"
+                                with open(meta_path, "a", encoding="utf-8") as mf:
+                                    mf.write(
+                                        json.dumps({
+                                            "filename": fname,
+                                            "url": img_info["url"],
+                                            "source_page": url,
+                                            "label": img_info.get("heuristic_label", ""),
+                                            "phash": phash,
+                                        }) + "\n"
                                     )
                             except Exception:
                                 pass
@@ -285,10 +324,8 @@ async def process_scrape_task(task_id: str, request: ScrapeRequest):
                 except Exception as e:
                     job_state["logs"].append(f"Error extracting {url}: {e}")
 
-                # Rate limit delay
-                await asyncio.sleep(
-                    1.0
-                )  # Removed request.rate_limit_delay as it's now in RefineRequest
+                # Polite crawl rate delay
+                await asyncio.sleep(0.35)
 
         # Finally, append the successfully scraped buffer into the single raw.txt for the project pipeline
         if combined_run_text:

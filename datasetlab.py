@@ -1,28 +1,32 @@
 #!/usr/bin/env python3
 """
-Dataset Lab — CLI runner
+AI Training Pipeline — Unified Suite CLI Runner (Dataset Lab + Finetune Lab + Chat Lab)
+
 Usage:
-    python datasetlab.py start    Start backend + frontend
-    python datasetlab.py stop     Stop running servers
-    python datasetlab.py status   Show server status
-    python datasetlab.py open     Open the app in your browser
-    python datasetlab.py logs     Tail live server logs
+    python datasetlab.py start [--lab all|dataset|finetune|chat]
+    python datasetlab.py stop  [--lab all|dataset|finetune|chat]
+    python datasetlab.py restart [--lab all|dataset|finetune|chat]
+    python datasetlab.py status [--lab all|dataset|finetune|chat]
+    python datasetlab.py open [--lab dataset|finetune|chat]
+    python datasetlab.py logs [--lab all|dataset|finetune|chat]
 """
 
 import os
 import sys
 
-# Force UTF-8 encoding for standard output and error to avoid UnicodeEncodeError on Windows
+# Force UTF-8 encoding for standard output and error on Windows
 try:
-    if hasattr(sys.stdout, 'reconfigure'):
-        sys.stdout.reconfigure(encoding='utf-8', line_buffering=True)
-    if hasattr(sys.stderr, 'reconfigure'):
-        sys.stderr.reconfigure(encoding='utf-8', line_buffering=True)
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", line_buffering=True)
 except Exception:
     pass
 
 import builtins
 _orig_print = builtins.print
+
+
 def _safe_print(*args, **kwargs):
     try:
         _orig_print(*args, **kwargs)
@@ -30,22 +34,29 @@ def _safe_print(*args, **kwargs):
         sep = kwargs.get("sep", " ")
         end = kwargs.get("end", "\n")
         text = sep.join(map(str, args)) + end
-        text = text.replace('✔', 'OK').replace('✖', 'X').replace('⚠', '!!').replace('▶', '>').replace('●', '*').replace('○', '-').replace('🎉', '***').replace('…', '...')
-        text = text.replace('╔', '+').replace('╗', '+').replace('╚', '+').replace('╝', '+').replace('═', '-').replace('║', '|').replace('─', '-')
-        encoding = getattr(sys.stdout, 'encoding', None) or 'ascii'
-        text = text.encode(encoding, errors='replace').decode(encoding)
+        for k, v in {
+            "✔": "OK", "✖": "X", "⚠": "!!", "▶": ">", "●": "*",
+            "○": "-", "🎉": "***", "…": "...", "╔": "+", "╗": "+",
+            "╚": "+", "╝": "+", "═": "-", "║": "|", "─": "-", "→": "->",
+        }.items():
+            text = text.replace(k, v)
+        encoding = getattr(sys.stdout, "encoding", None) or "ascii"
+        text = text.encode(encoding, errors="replace").decode(encoding)
         _orig_print(text, end="")
+
+
 print = _safe_print
 
-import subprocess
+import argparse
 import platform
-import time
-import socket
 import signal
+import socket
+import subprocess
+import time
 import webbrowser
 from pathlib import Path
 
-# ── ANSI helpers ──────────────────────────────────────────────────────────────
+
 def _enable_color():
     if platform.system() == "Windows":
         try:
@@ -53,14 +64,18 @@ def _enable_color():
             ctypes.windll.kernel32.SetConsoleMode(
                 ctypes.windll.kernel32.GetStdHandle(-11), 7
             )
+            return True
         except Exception:
             return False
     return True
 
+
 USE_COLOR = _enable_color()
+
 
 def c(text, code):
     return f"\033[{code}m{text}\033[0m" if USE_COLOR else text
+
 
 def GREEN(t):  return c(t, "92")
 def YELLOW(t): return c(t, "93")
@@ -69,58 +84,80 @@ def RED(t):    return c(t, "91")
 def BOLD(t):   return c(t, "1")
 def DIM(t):    return c(t, "2")
 
-# ── Paths ─────────────────────────────────────────────────────────────────────
-REPO_ROOT    = Path(__file__).parent.resolve()
-APP_DIR      = REPO_ROOT / "dataset-lab"
-BACKEND_DIR  = APP_DIR / "backend"
-FRONTEND_DIR = APP_DIR / "frontend"
-VENV_DIR     = APP_DIR / ".venv"
-PID_DIR      = APP_DIR / ".pids"
-LOG_DIR      = APP_DIR / ".logs"
 
-BACKEND_PID  = PID_DIR / "backend.pid"
-FRONTEND_PID = PID_DIR / "frontend.pid"
-BACKEND_LOG  = LOG_DIR / "backend.log"
-FRONTEND_LOG = LOG_DIR / "frontend.log"
-
-BACKEND_URL  = "http://localhost:8000/docs"
-FRONTEND_URL = "http://localhost:5173"
-
+REPO_ROOT = Path(__file__).parent.resolve()
 IS_WIN = platform.system() == "Windows"
 
 
-# ── Utilities ─────────────────────────────────────────────────────────────────
-def _resolve_venv_bin(name: str) -> Path:
-    """Resolve path to an executable inside the venv."""
-    if IS_WIN:
-        return VENV_DIR / "Scripts" / (name + ".exe")
-    return VENV_DIR / "bin" / name
+def _pick_venv_python(lab_dir: Path) -> Path | None:
+    """Resolve Python executable from lab-local .venv or repo root .venv."""
+    candidates = [lab_dir / ".venv", REPO_ROOT / ".venv"]
+    for venv in candidates:
+        exe = venv / ("Scripts/python.exe" if IS_WIN else "bin/python")
+        if exe.exists():
+            return exe
+    return Path(sys.executable)
 
 
-def _ensure_installed():
-    python_bin = _resolve_venv_bin("python")
-    if not python_bin.exists():
-        print(RED("  ✖  Virtual environment not found."))
-        print(f"  {DIM('Run:  python install.py  first.')}")
-        sys.exit(1)
-    node_modules = FRONTEND_DIR / "node_modules"
-    if not node_modules.exists():
-        print(RED("  ✖  Frontend node_modules not found."))
-        print(f"  {DIM('Run:  python install.py  first.')}")
-        sys.exit(1)
+LABS = {
+    "dataset": {
+        "name": "Dataset Lab",
+        "dir": REPO_ROOT / "dataset-lab",
+        "backend_cwd": REPO_ROOT / "dataset-lab",
+        "backend_app": "backend.main:app",
+        "backend_port": 8000,
+        "frontend_port": 5173,
+        "docs_url": "http://localhost:8000/docs",
+        "frontend_url": "http://localhost:5173",
+    },
+    "finetune": {
+        "name": "Finetune Lab",
+        "dir": REPO_ROOT / "finetune-lab",
+        "backend_cwd": REPO_ROOT / "finetune-lab" / "backend",
+        "backend_app": "main:app",
+        "backend_port": 8001,
+        "frontend_port": 5174,
+        "docs_url": "http://localhost:8001/docs",
+        "frontend_url": "http://localhost:5174",
+    },
+    "chat": {
+        "name": "Chat Lab",
+        "dir": REPO_ROOT / "chat-lab",
+        "backend_cwd": REPO_ROOT / "chat-lab" / "backend",
+        "backend_app": "main:app",
+        "backend_port": 8100,
+        "frontend_port": 5273,
+        "docs_url": "http://localhost:8100/docs",
+        "frontend_url": "http://localhost:5273",
+    },
+}
+
+
+def _pid_files(lab_key: str):
+    pid_dir = LABS[lab_key]["dir"] / ".pids"
+    return pid_dir, pid_dir / "backend.pid", pid_dir / "frontend.pid"
+
+
+def _log_files(lab_key: str):
+    log_dir = LABS[lab_key]["dir"] / ".logs"
+    return log_dir, log_dir / "backend.log", log_dir / "frontend.log"
 
 
 def _read_pid(pid_file: Path):
     if pid_file.exists():
         try:
-            return int(pid_file.read_text().strip())
+            return int(pid_file.read_text(encoding="utf-8").strip())
         except ValueError:
             pass
     return None
 
 
+def _write_pid(pid_file: Path, pid: int):
+    pid_file.parent.mkdir(parents=True, exist_ok=True)
+    pid_file.write_text(str(pid), encoding="utf-8")
+
+
 def _process_alive(pid) -> bool:
-    """Check if a process with the given PID is running."""
     if pid is None:
         return False
     try:
@@ -130,9 +167,8 @@ def _process_alive(pid) -> bool:
                 capture_output=True, text=True
             )
             return str(pid) in result.stdout
-        else:
-            os.kill(pid, 0)
-            return True
+        os.kill(pid, 0)
+        return True
     except (ProcessLookupError, PermissionError, OSError):
         return False
 
@@ -140,309 +176,270 @@ def _process_alive(pid) -> bool:
 def _kill_pid(pid: int):
     try:
         if IS_WIN:
-            subprocess.run(["taskkill", "/F", "/PID", str(pid)],
-                           capture_output=True)
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True)
         else:
             os.kill(pid, signal.SIGTERM)
     except Exception:
         pass
 
 
-def _write_pid(pid_file: Path, pid: int):
-    PID_DIR.mkdir(exist_ok=True)
-    pid_file.write_text(str(pid))
-
-
-def _port_open(port: int, host: str = "127.0.0.1") -> bool:
-    """Instant check — is the port currently accepting connections?
-    Tries both IPv4 (127.0.0.1) and IPv6 (::1) since Vite on newer
-    Node versions may bind to IPv6 by default on Windows.
-    """
+def _port_open(port: int) -> bool:
     for h in ("127.0.0.1", "::1"):
         try:
-            with socket.create_connection((h, port), timeout=0.5):
+            with socket.create_connection((h, port), timeout=0.4):
                 return True
         except OSError:
             pass
     return False
 
 
-def _wait_for_port(port: int, host: str = "127.0.0.1", timeout: int = 30) -> bool:
-    """Poll a TCP port until it accepts connections or timeout is reached.
-    Tries both IPv4 and IPv6 for compatibility with Vite on Windows.
-    """
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        for h in ("127.0.0.1", "::1"):
-            try:
-                with socket.create_connection((h, port), timeout=1):
-                    return True
-            except OSError:
-                pass
-        time.sleep(1)
-    return False
-
-
 def _tail_log(log_file: Path, lines: int = 25) -> str:
-    """Return the last N lines of a log file as a string."""
     if not log_file.exists():
         return "  (no log file found)"
     content = log_file.read_text(encoding="utf-8", errors="replace").strip()
     return "\n".join(content.splitlines()[-lines:]) if content else "  (log is empty)"
 
 
-def _banner_line(msg: str):
-    print(f"\n  {BOLD(CYAN('▶'))}  {BOLD(msg)}")
+def _selected_labs(lab_arg: str) -> list[str]:
+    if lab_arg == "all":
+        return ["dataset", "finetune", "chat"]
+    return [lab_arg]
 
 
-# ── Commands ──────────────────────────────────────────────────────────────────
-def cmd_start():
-    _ensure_installed()
-    LOG_DIR.mkdir(exist_ok=True)
-    PID_DIR.mkdir(exist_ok=True)
+def _start_lab(lab_key: str) -> bool:
+    cfg = LABS[lab_key]
+    app_dir = cfg["dir"]
+    frontend_dir = app_dir / "frontend"
+    node_modules = frontend_dir / "node_modules"
+    if not node_modules.exists():
+        print(RED(f"  ✖  {cfg['name']} frontend node_modules not found ({node_modules})."))
+        return False
 
-    # ── Check if already running via PID ──────────────────────────────────────
-    back_pid  = _read_pid(BACKEND_PID)
-    front_pid = _read_pid(FRONTEND_PID)
-    if _process_alive(back_pid) and _process_alive(front_pid):
-        print(YELLOW("\n  ⚠  Dataset Lab is already running."))
-        print(f"  {DIM(f'Backend:   {BACKEND_URL}')}")
-        print(f"  {DIM(f'Frontend:  {FRONTEND_URL}')}")
-        print(f"\n  Run {BOLD(CYAN('python datasetlab.py stop'))} to stop it first.\n")
-        return
+    pid_dir, back_pid_file, front_pid_file = _pid_files(lab_key)
+    log_dir, back_log, front_log = _log_files(lab_key)
+    pid_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
 
-    # ── Early port conflict check ──────────────────────────────────────────────
-    # Do this BEFORE spawning processes so the user gets a clear, actionable error.
-    for port, name in [(8000, "Backend (port 8000)"), (5173, "Frontend (port 5173)")]:
-        if _port_open(port):
-            print(YELLOW(f"\n  ⚠  {name} port is already in use by another process."))
-            print(f"  You likely have a dev server already running in another terminal.")
-            print(f"\n  To find and kill the process on port {port}:")
-            print(f"    {BOLD(f'netstat -ano | findstr :{port}')}")
-            print(f"    {BOLD('taskkill /PID <pid> /F')}")
-            print(f"\n  Or stop Dataset Lab's own servers first:")
-            print(f"    {BOLD(CYAN('python datasetlab.py stop'))}\n")
-            return
+    back_port = cfg["backend_port"]
+    front_port = cfg["frontend_port"]
 
-    print()
-    print(BOLD(CYAN("╔══════════════════════════════════════════════════════╗")))
-    print(BOLD(CYAN("║            Dataset Lab  ─  Starting…                 ║")))
-    print(BOLD(CYAN("╚══════════════════════════════════════════════════════╝")))
+    if _port_open(back_port) and _port_open(front_port):
+        print(YELLOW(f"  ⚠  {cfg['name']} already running on :{back_port} / :{front_port}"))
+        return True
 
-    python_bin = str(_resolve_venv_bin("python"))
-    npm_bin    = "npm.cmd" if IS_WIN else "npm"
+    python_bin = str(_pick_venv_python(app_dir))
+    npm_bin = "npm.cmd" if IS_WIN else "npm"
 
-    # ── Start Backend ──────────────────────────────────────────────────────────
-    # IMPORTANT: Launch uvicorn directly (no --reload flag).
-    # Running `python -m backend.main` uses reload=True which spawns child workers
-    # then the parent exits — making PID tracking think the server died.
-    _banner_line("Starting backend …")
-    
-    # Isolate environment to prevent parent shell Python paths from breaking the venv
     backend_env = os.environ.copy()
     backend_env["PYTHONUNBUFFERED"] = "1"
-    backend_env["PYTHONWARNINGS"] = "ignore"  # Hide non-fatal dependency warnings
-    for var in ["PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV", "__PYVENV_LAUNCHER__"]:
+    backend_env["PYTHONWARNINGS"] = "ignore"
+    for var in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV", "__PYVENV_LAUNCHER__"):
         backend_env.pop(var, None)
-        
-    with open(BACKEND_LOG, "w") as log:
-        back_proc = subprocess.Popen(
-            [python_bin, "-m", "uvicorn", "backend.main:app",
-             "--host", "0.0.0.0", "--port", "8000"],
-            cwd=str(APP_DIR),
-            env=backend_env,
-            stdout=log,
-            stderr=log,
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if IS_WIN else 0,
-        )
-    _write_pid(BACKEND_PID, back_proc.pid)
-    print(f"  {GREEN('✔')}  Backend  PID {back_proc.pid}  →  {DIM(str(BACKEND_LOG))}")
 
-    # ── Start Frontend ─────────────────────────────────────────────────────────
-    _banner_line("Starting frontend …")
-    with open(FRONTEND_LOG, "w") as log:
-        front_proc = subprocess.Popen(
-            [npm_bin, "run", "dev"],
-            cwd=str(FRONTEND_DIR),
-            stdout=log,
-            stderr=log,
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if IS_WIN else 0,
-        )
-    _write_pid(FRONTEND_PID, front_proc.pid)
-    print(f"  {GREEN('✔')}  Frontend PID {front_proc.pid}  →  {DIM(str(FRONTEND_LOG))}")
+    lab_name = cfg["name"]
+    print(f"\n  {BOLD(CYAN('▶'))}  {BOLD(f'Starting {lab_name} …')}")
 
-    # ── Wait with crash detection ──────────────────────────────────────────────
-    # sentence-transformers + chromadb can take up to 2 mins to download/import
-    # on cold start, so we poll instead of sleeping a fixed duration.
-    print(f"\n  {DIM('Waiting for servers to come up (up to 120s)…')}")
+    win_flags = (
+        subprocess.CREATE_NEW_PROCESS_GROUP | getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+        if IS_WIN
+        else 0
+    )
 
-    def wait_with_crash_detect(proc, port, timeout=120):
+    if not _port_open(back_port):
+        with open(back_log, "w", encoding="utf-8") as log:
+            back_proc = subprocess.Popen(
+                [
+                    python_bin, "-m", "uvicorn", cfg["backend_app"],
+                    "--host", "0.0.0.0", "--port", str(back_port),
+                ],
+                cwd=str(cfg["backend_cwd"]),
+                env=backend_env,
+                stdin=subprocess.DEVNULL,
+                stdout=log,
+                stderr=log,
+                close_fds=not IS_WIN,
+                creationflags=win_flags,
+            )
+        _write_pid(back_pid_file, back_proc.pid)
+        print(f"  {GREEN('✔')}  Backend  PID {back_proc.pid} (:{back_port}) -> {DIM(str(back_log))}")
+    else:
+        back_proc = None
+        print(f"  {YELLOW('⚠')}  Backend port :{back_port} already listening")
+
+    if not _port_open(front_port):
+        with open(front_log, "w", encoding="utf-8") as log:
+            front_proc = subprocess.Popen(
+                [npm_bin, "run", "dev", "--", "--port", str(front_port)],
+                cwd=str(frontend_dir),
+                stdin=subprocess.DEVNULL,
+                stdout=log,
+                stderr=log,
+                close_fds=not IS_WIN,
+                creationflags=win_flags,
+            )
+        _write_pid(front_pid_file, front_proc.pid)
+        print(f"  {GREEN('✔')}  Frontend PID {front_proc.pid} (:{front_port}) -> {DIM(str(front_log))}")
+    else:
+        front_proc = None
+        print(f"  {YELLOW('⚠')}  Frontend port :{front_port} already listening")
+
+    def wait_port(proc, port, timeout=60):
         deadline = time.time() + timeout
         while time.time() < deadline:
             if _port_open(port):
                 return True
-            if proc.poll() is not None:   # process exited early = crash
+            if proc is not None and proc.poll() is not None:
                 return False
-            time.sleep(1)
+            time.sleep(0.75)
         return False
 
-    back_ok  = wait_with_crash_detect(back_proc,  8000)
-    front_ok = wait_with_crash_detect(front_proc, 5173, timeout=60)
+    back_ok = wait_port(back_proc, back_port, timeout=90)
+    front_ok = wait_port(front_proc, front_port, timeout=60)
 
-    print()
     status_icon = lambda ok: GREEN("✔ running") if ok else RED("✖ failed")
-    print(f"  Backend   [ {status_icon(back_ok)} ]   {CYAN(BACKEND_URL)}")
-    print(f"  Frontend  [ {status_icon(front_ok)} ]   {CYAN(FRONTEND_URL)}")
+    print(f"     Backend   [ {status_icon(back_ok)} ]  {CYAN(cfg['docs_url'])}")
+    print(f"     Frontend  [ {status_icon(front_ok)} ]  {CYAN(cfg['frontend_url'])}")
 
-    if back_ok and front_ok:
-        print()
-        print(BOLD(GREEN("  🎉  Dataset Lab is live!  Opening browser…")))
-        time.sleep(1)
-        webbrowser.open(FRONTEND_URL)
+    if not back_ok:
+        print(YELLOW(f"\n  ── {cfg['name']} Backend error (last 20 lines) ──"))
+        print(DIM(_tail_log(back_log, 20)))
+    if not front_ok:
+        print(YELLOW(f"\n  ── {cfg['name']} Frontend error (last 20 lines) ──"))
+        print(DIM(_tail_log(front_log, 20)))
+
+    return back_ok and front_ok
+
+
+def cmd_start(lab_arg: str, open_browser: bool = True):
+    labs = _selected_labs(lab_arg)
+    print()
+    print(BOLD(CYAN("╔════════════════════════════════════════════════════════════╗")))
+    print(BOLD(CYAN("║      AI Training Suite  ─  Starting Services               ║")))
+    print(BOLD(CYAN("╚════════════════════════════════════════════════════════════╝")))
+
+    all_ok = True
+    for k in labs:
+        if not _start_lab(k):
+            all_ok = False
+
+    if all_ok:
+        print(f"\n  {BOLD(GREEN('🎉  All requested labs are live!'))}")
+        if open_browser:
+            webbrowser.open(LABS[labs[0]]["frontend_url"])
     else:
-        print()
-        print(RED("  ✖  One or more servers failed to start."))
-        if not back_ok:
-            print(f"\n  {BOLD(YELLOW('── Backend error (last 25 lines) ─────────────────────────'))}")
-            print(DIM(_tail_log(BACKEND_LOG)))
-        if not front_ok:
-            print(f"\n  {BOLD(YELLOW('── Frontend error (last 25 lines) ────────────────────────'))}")
-            print(DIM(_tail_log(FRONTEND_LOG)))
-        print(f"\n  Full logs:  {BOLD(CYAN('python datasetlab.py logs'))}")
+        print(f"\n  {RED('✖  One or more services failed to start.')} Run {BOLD(CYAN('python datasetlab.py logs'))} for details.")
+    print(DIM("\n  Run 'python datasetlab.py stop' to shut down all managed servers.\n"))
 
+
+def cmd_stop(lab_arg: str):
     print()
-    print(DIM("  Press Ctrl+C or run 'python datasetlab.py stop' to stop.\n"))
-
-
-def cmd_stop():
-    print()
-    back_pid  = _read_pid(BACKEND_PID)
-    front_pid = _read_pid(FRONTEND_PID)
-
     stopped_any = False
-
-    if _process_alive(back_pid):
-        _kill_pid(back_pid)
-        BACKEND_PID.unlink(missing_ok=True)
-        print(f"  {GREEN('✔')}  Backend stopped  (PID {back_pid})")
-        stopped_any = True
+    for k in _selected_labs(lab_arg):
+        cfg = LABS[k]
+        _, back_pid_file, front_pid_file = _pid_files(k)
+        for label, pid_file in (("Backend", back_pid_file), ("Frontend", front_pid_file)):
+            pid = _read_pid(pid_file)
+            if _process_alive(pid):
+                _kill_pid(pid)
+                pid_file.unlink(missing_ok=True)
+                print(f"  {GREEN('✔')}  {cfg['name']} {label} stopped (PID {pid})")
+                stopped_any = True
+            else:
+                pid_file.unlink(missing_ok=True)
+    if not stopped_any:
+        print(f"  {YELLOW('⚠  No tracked lab processes were running.')}")
     else:
-        print(f"  {DIM('Backend not running — skipping.')}")
-
-    if _process_alive(front_pid):
-        _kill_pid(front_pid)
-        FRONTEND_PID.unlink(missing_ok=True)
-        print(f"  {GREEN('✔')}  Frontend stopped  (PID {front_pid})")
-        stopped_any = True
-    else:
-        print(f"  {DIM('Frontend not running — skipping.')}")
-
-    if stopped_any:
-        print(f"\n  {BOLD(GREEN('Dataset Lab stopped.'))}\n")
-    else:
-        print(f"\n  {YELLOW('⚠  Nothing was running.')}\n")
-
-
-def cmd_status():
-    print()
-    back_pid  = _read_pid(BACKEND_PID)
-    front_pid = _read_pid(FRONTEND_PID)
-
-    def row(name, pid, port, url):
-        pid_alive = _process_alive(pid)
-        port_up   = _port_open(port)
-        alive = pid_alive or port_up
-        icon  = GREEN("● running") if alive else RED("○ stopped")
-        pid_s = f"(PID {pid})" if pid_alive else ("(port open)" if port_up else "")
-        print(f"  {BOLD(name):12s}  {icon}  {pid_s}  {DIM(url)}")
-        return alive
-
-    print(BOLD("  Service     Status"))
-    print("  " + "─" * 54)
-    back_alive  = row("Backend",  back_pid,  8000, BACKEND_URL)
-    front_alive = row("Frontend", front_pid, 5173, FRONTEND_URL)
-
-    alive_count = sum([back_alive, front_alive])
-    print()
-    if alive_count == 2:
-        print(f"  {GREEN('All systems operational.')}")
-    elif alive_count == 0:
-        print(f"  {YELLOW('Servers are not running.')}")
-        print(f"  Start with:  {BOLD(CYAN('python datasetlab.py start'))}")
-    else:
-        print(f"  {YELLOW('⚠  Some servers are not running.')}")
-        print(f"  Try restarting with:  {BOLD(CYAN('python datasetlab.py start'))}")
+        print(f"\n  {BOLD(GREEN('Requested labs stopped.'))}")
     print()
 
 
-def cmd_open():
-    if not _port_open(5173):
-        print(YELLOW(f"\n  ⚠  Frontend server doesn't appear to be running."))
-        print(f"  Start it with:  {BOLD(CYAN('python datasetlab.py start'))}\n")
-        return
-    print(f"\n  {GREEN('✔')}  Opening {CYAN(FRONTEND_URL)} …\n")
-    webbrowser.open(FRONTEND_URL)
-
-
-def cmd_logs():
-    """Print backend and frontend log tails."""
+def cmd_status(lab_arg: str):
     print()
-    print(BOLD(CYAN("  ── Backend Log ─────────────────────────────────────")))
-    if BACKEND_LOG.exists():
-        print(DIM(BACKEND_LOG.read_text(encoding="utf-8", errors="replace")[-6000:]))
-    else:
-        print(DIM("  (no log file yet — run 'python datasetlab.py start' first)"))
-
+    print(BOLD("  Lab            Service    Status       Info"))
+    print("  " + "─" * 66)
+    total = 0
+    alive_total = 0
+    for k in _selected_labs(lab_arg):
+        cfg = LABS[k]
+        _, back_pid_file, front_pid_file = _pid_files(k)
+        for label, pid_file, port, url in (
+            ("Backend", back_pid_file, cfg["backend_port"], cfg["docs_url"]),
+            ("Frontend", front_pid_file, cfg["frontend_port"], cfg["frontend_url"]),
+        ):
+            total += 1
+            pid = _read_pid(pid_file)
+            pid_alive = _process_alive(pid)
+            port_up = _port_open(port)
+            alive = pid_alive or port_up
+            if alive:
+                alive_total += 1
+            icon = GREEN("● running") if alive else RED("○ stopped")
+            pid_s = f"PID {pid}" if pid_alive else (f":{port}" if port_up else f":{port} down")
+            print(f"  {BOLD(cfg['name']):14s} {label:9s}  {icon}  {pid_s:10s}  {DIM(url)}")
     print()
-    print(BOLD(CYAN("  ── Frontend Log ────────────────────────────────────")))
-    if FRONTEND_LOG.exists():
-        print(DIM(FRONTEND_LOG.read_text(encoding="utf-8", errors="replace")[-6000:]))
-    else:
-        print(DIM("  (no log file yet — run 'python datasetlab.py start' first)"))
+    print(f"  {GREEN('All systems operational.') if alive_total == total else YELLOW(f'{alive_total}/{total} services active.')}\n")
+
+
+def cmd_open(lab_arg: str):
+    labs = _selected_labs(lab_arg)
+    for k in labs:
+        cfg = LABS[k]
+        if _port_open(cfg["frontend_port"]):
+            print(f"  {GREEN('✔')}  Opening {cfg['name']}: {CYAN(cfg['frontend_url'])}")
+            webbrowser.open(cfg["frontend_url"])
+        else:
+            print(f"  {YELLOW('⚠')}  {cfg['name']} is not listening on :{cfg['frontend_port']}")
+
+
+def cmd_logs(lab_arg: str):
+    for k in _selected_labs(lab_arg):
+        cfg = LABS[k]
+        lab_name = cfg["name"]
+        _, back_log, front_log = _log_files(k)
+        print(f"\n{BOLD(CYAN(f'  ── {lab_name} Backend Log ──────────────────────────'))}")
+        print(DIM(_tail_log(back_log, 40)))
+        print(f"\n{BOLD(CYAN(f'  ── {lab_name} Frontend Log ─────────────────────────'))}")
+        print(DIM(_tail_log(front_log, 40)))
     print()
-
-
-HELP_TEXT = f"""
-{BOLD(CYAN('Dataset Lab CLI'))}
-
-Usage:
-  {BOLD('python datasetlab.py <command>')}
-
-Commands:
-  {BOLD(GREEN('start'))}    Start the backend and frontend servers
-  {BOLD(GREEN('stop'))}     Stop all running servers
-  {BOLD(GREEN('status'))}   Show current server status
-  {BOLD(GREEN('open'))}     Open the app in your default browser
-  {BOLD(GREEN('logs'))}     Show recent output from server logs
-
-Examples:
-  python datasetlab.py start
-  python datasetlab.py stop
-  python datasetlab.py status
-"""
 
 
 def main():
-    if len(sys.argv) < 2:
-        print(HELP_TEXT)
-        return
-
-    cmd = sys.argv[1].lower()
-    dispatch = {
-        "start":  cmd_start,
-        "stop":   cmd_stop,
-        "status": cmd_status,
-        "open":   cmd_open,
-        "logs":   cmd_logs,
-    }
-
-    if cmd not in dispatch:
-        print(RED(f"\n  Unknown command: '{cmd}'\n"))
-        print(HELP_TEXT)
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Unified CLI runner for Dataset Lab, Finetune Lab, and Chat Lab."
+    )
+    parser.add_argument(
+        "command",
+        choices=["start", "stop", "restart", "status", "open", "logs"],
+        help="Action to perform",
+    )
+    parser.add_argument(
+        "--lab",
+        choices=["all", "dataset", "finetune", "chat"],
+        default="all",
+        help="Target lab (default: all)",
+    )
+    parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Do not automatically open browser on start",
+    )
+    args = parser.parse_args()
 
     try:
-        dispatch[cmd]()
+        if args.command == "start":
+            cmd_start(args.lab, open_browser=not args.no_browser)
+        elif args.command == "stop":
+            cmd_stop(args.lab)
+        elif args.command == "restart":
+            cmd_stop(args.lab)
+            time.sleep(1)
+            cmd_start(args.lab, open_browser=not args.no_browser)
+        elif args.command == "status":
+            cmd_status(args.lab)
+        elif args.command == "open":
+            cmd_open(args.lab)
+        elif args.command == "logs":
+            cmd_logs(args.lab)
     except KeyboardInterrupt:
         print("\n  Interrupted.\n")
 

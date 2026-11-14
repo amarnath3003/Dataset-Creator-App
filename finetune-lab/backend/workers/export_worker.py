@@ -52,10 +52,48 @@ def _load_model(payload: dict[str, Any]):
     return model, tokenizer
 
 
+def _is_simulated_adapter(adapter_dir: Path) -> bool:
+    if (adapter_dir / "domain_knowledge.json").exists():
+        return True
+    cfg_path = adapter_dir / "adapter_config.json"
+    if cfg_path.exists():
+        try:
+            import json
+            return bool(json.loads(cfg_path.read_text(encoding="utf-8")).get("simulated"))
+        except Exception:
+            pass
+    return False
+
+
 def _export_merged_16bit(payload: dict[str, Any]) -> str:
     export_id = payload["export_id"]
-    model, tokenizer = _load_model(payload)
+    adapter_dir = Path(payload["adapter_dir"])
     out = Path(payload["output_root"]) / "merged_16bit"
+    if _is_simulated_adapter(adapter_dir):
+        import json
+
+        _set(export_id, progress=60, message="Packaging simulated 16-bit merged bundle...")
+        out.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(adapter_dir, out, dirs_exist_ok=True)
+        (out / "config.json").write_text(
+            json.dumps(
+                {
+                    "model_type": "causal_lm",
+                    "base_model": payload.get("base_model"),
+                    "merged_16bit": True,
+                    "simulated": True,
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        (out / "Modelfile").write_text(
+            f"FROM {payload.get('base_model') or 'llama3.2'}\nSYSTEM Fine-tuned domain assistant\n",
+            encoding="utf-8",
+        )
+        return str(out)
+
+    model, tokenizer = _load_model(payload)
     _set(export_id, progress=60, message="Merging adapter into 16-bit weights...")
     model.save_pretrained_merged(str(out), tokenizer, save_method="merged_16bit")
     return str(out)
@@ -65,8 +103,28 @@ def _export_gguf(payload: dict[str, Any]) -> str:
     export_id = payload["export_id"]
     options = payload.get("options") or {}
     quant = str(options.get("quantization_method", "q4_k_m"))
-    model, tokenizer = _load_model(payload)
+    adapter_dir = Path(payload["adapter_dir"])
     out = Path(payload["output_root"]) / "gguf"
+    if _is_simulated_adapter(adapter_dir):
+        import json
+
+        _set(export_id, progress=60, message=f"Packaging simulated GGUF ({quant}) & Ollama Modelfile...")
+        out.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(adapter_dir, out, dirs_exist_ok=True)
+        model_slug = (payload.get("base_model") or "model").split("/")[-1].lower()
+        gguf_name = f"{model_slug}.{quant}.gguf"
+        (out / gguf_name).write_bytes(b"GGUF\x03\x00\x00\x00SIMULATED_QUANTIZED_WEIGHTS\n")
+        (out / "Modelfile").write_text(
+            f"FROM ./{gguf_name}\nPARAMETER temperature 0.7\nSYSTEM Fine-tuned domain model\n",
+            encoding="utf-8",
+        )
+        (out / "export_manifest.json").write_text(
+            json.dumps({"quantization_method": quant, "gguf_file": gguf_name, "simulated": True}, indent=2),
+            encoding="utf-8",
+        )
+        return str(out)
+
+    model, tokenizer = _load_model(payload)
     _set(export_id, progress=60, message=f"Converting to GGUF ({quant})...")
     model.save_pretrained_gguf(str(out), tokenizer, quantization_method=quant)
     return str(out)

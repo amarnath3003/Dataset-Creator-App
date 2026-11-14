@@ -1,11 +1,14 @@
-import aiohttp
-import os
-import aiofiles
-import logging
-import ssl
-from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlparse
+import hashlib
 import io
+import logging
+import os
+import re
+import ssl
+from urllib.parse import urljoin, urlparse
+
+import aiofiles
+import aiohttp
+from bs4 import BeautifulSoup
 
 try:
     from PIL import Image
@@ -19,41 +22,72 @@ MIN_IMAGE_SIZE = (150, 150)
 
 
 def is_valid_image_url(url: str) -> bool:
-    if url.startswith("data:image"):
+    if not url or url.startswith("data:image"):
         return False
     parsed = urlparse(url)
     ext = os.path.splitext(parsed.path)[1].lower().strip(".")
-    # Note: CDNs sometimes serve images without extensions or with dynamic query strings,
-    # so we only exclude explicitly non-image extensions if present.
     if ext and ext not in ALLOWED_EXTENSIONS:
         return False
     return True
 
 
+def _pick_best_src(img) -> str | None:
+    """Resolve real image source checking srcset and common lazy-loading attributes."""
+    srcset = img.get("srcset") or img.get("data-srcset")
+    if srcset:
+        candidates = []
+        for entry in srcset.split(","):
+            parts = entry.strip().split()
+            if not parts:
+                continue
+            url = parts[0]
+            weight = 0
+            if len(parts) > 1:
+                m = re.match(r"(\d+)[wx]", parts[1])
+                if m:
+                    weight = int(m.group(1))
+            candidates.append((weight, url))
+        if candidates:
+            candidates.sort(key=lambda x: x[0], reverse=True)
+            if candidates[0][1] and not candidates[0][1].startswith("data:image"):
+                return candidates[0][1]
+
+    for attr in ("src", "data-src", "data-lazy-src", "data-original", "data-url"):
+        val = img.get(attr)
+        if val and not str(val).strip().startswith("data:image"):
+            return str(val).strip()
+    return None
+
+
 def extract_image_urls(html_content: str, base_url: str) -> list[dict]:
-    """
-    Extracts images and their surrounding context (alt text, parent text).
-    """
+    """Extracts images (including lazy-loaded, srcset, and og:image) with surrounding context."""
     soup = BeautifulSoup(html_content, "html.parser")
     images = []
+    seen_urls = set()
+
+    # Check OpenGraph / Twitter hero images first
+    for meta in soup.find_all("meta", attrs={"property": ["og:image", "twitter:image"]}):
+        content = meta.get("content")
+        if content:
+            full_url = urljoin(base_url, content)
+            if is_valid_image_url(full_url) and full_url not in seen_urls:
+                seen_urls.add(full_url)
+                images.append({"url": full_url, "heuristic_label": "OpenGraph Featured Image"})
 
     for img in soup.find_all("img"):
-        src = img.get("src")
+        src = _pick_best_src(img)
         if not src:
             continue
 
         full_url = urljoin(base_url, src)
-        if not is_valid_image_url(full_url):
+        if full_url in seen_urls or not is_valid_image_url(full_url):
             continue
 
         alt_text = img.get("alt", "")
         title_text = img.get("title", "")
         filename = os.path.basename(urlparse(full_url).path)
+        parent_text = img.parent.get_text(separator=" ", strip=True)[:200] if img.parent else ""
 
-        # Try to find a caption or surrounding text
-        parent_text = img.parent.get_text(separator=" ", strip=True)[:200]
-
-        # Heuristic Context Construction string
         context_parts = []
         if alt_text:
             context_parts.append(f"Alt: {alt_text}")
@@ -66,15 +100,15 @@ def extract_image_urls(html_content: str, base_url: str) -> list[dict]:
 
         heuristic_label = " | ".join(context_parts)
 
-        # Optional: Preliminary dimension check from HTML attributes
         try:
             w = int(img.get("width", 999))
             h = int(img.get("height", 999))
             if w < MIN_IMAGE_SIZE[0] or h < MIN_IMAGE_SIZE[1]:
                 continue
-        except ValueError:
+        except (ValueError, TypeError):
             pass
 
+        seen_urls.add(full_url)
         images.append({"url": full_url, "heuristic_label": heuristic_label})
 
     return images
@@ -85,15 +119,15 @@ async def download_image(
 ) -> str | None:
     try:
         os.makedirs(save_dir, exist_ok=True)
-        filename = os.path.basename(urlparse(url).path)
-        if not filename:
-            filename = "downloaded_image"
-
+        raw_name = os.path.basename(urlparse(url).path) or "image"
+        safe_name = re.sub(r"[^a-zA-Z0-9._-]", "_", raw_name)[:64]
+        url_hash = hashlib.md5(url.encode("utf-8")).hexdigest()[:8]
+        filename = f"{url_hash}_{safe_name}"
         save_path = os.path.join(save_dir, filename)
 
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
             "Connection": "keep-alive",
         }
 
@@ -104,60 +138,49 @@ async def download_image(
         async with session.get(
             url, headers=headers, timeout=15, ssl=ssl_context
         ) as response:
-            if response.status == 200:
-                # Need to read content and verify headers
-                content = await response.read()
+            if response.status != 200:
+                return None
 
-                # Determine image type
-                content_type = response.headers.get("Content-Type", "").lower()
-                img_type = None
+            content = await response.read()
+            content_type = response.headers.get("Content-Type", "").lower()
+            img_type = None
 
-                if "image/" in content_type:
-                    img_type = content_type.split("/")[-1].split(";")[0]
-                else:
-                    # Fallback standard magic numbers if headers lie (like imghdr used to do)
-                    if content.startswith(b"\xff\xd8\xff"):
-                        img_type = "jpeg"
-                    elif content.startswith(b"\x89PNG\r\n\x1a\n"):
-                        img_type = "png"
-                    elif content.startswith(b"GIF87a") or content.startswith(b"GIF89a"):
-                        img_type = "gif"
-                    elif content.startswith(b"RIFF") and content[8:12] == b"WEBP":
-                        img_type = "webp"
+            if "image/" in content_type:
+                img_type = content_type.split("/")[-1].split(";")[0].split("+")[0]
+            else:
+                if content.startswith(b"\xff\xd8\xff"):
+                    img_type = "jpeg"
+                elif content.startswith(b"\x89PNG\r\n\x1a\n"):
+                    img_type = "png"
+                elif content.startswith(b"GIF87a") or content.startswith(b"GIF89a"):
+                    img_type = "gif"
+                elif content.startswith(b"RIFF") and content[8:12] == b"WEBP":
+                    img_type = "webp"
 
-                if not img_type or (
-                    img_type not in ALLOWED_EXTENSIONS
-                    and img_type
-                    not in ["jpeg", "jpg", "png", "webp", "avif", "gif", "svg"]
-                ):
-                    logger.debug(f"Skipping invalid image type: {img_type} for {url}")
+            if not img_type or (
+                img_type not in ALLOWED_EXTENSIONS
+                and img_type not in ["jpeg", "jpg", "png", "webp", "avif"]
+            ):
+                return None
+
+            if Image:
+                try:
+                    pil_img = Image.open(io.BytesIO(content))
+                    if (
+                        pil_img.width < MIN_IMAGE_SIZE[0]
+                        or pil_img.height < MIN_IMAGE_SIZE[1]
+                    ):
+                        return None
+                except Exception:
                     return None
 
-                # Strict 150x150 dimension check using PIL (pillow)
-                if Image:
-                    try:
-                        pil_img = Image.open(io.BytesIO(content))
-                        if (
-                            pil_img.width < MIN_IMAGE_SIZE[0]
-                            or pil_img.height < MIN_IMAGE_SIZE[1]
-                        ):
-                            logger.debug(
-                                f"Skipping small object ({pil_img.width}x{pil_img.height}): {url}"
-                            )
-                            return None
-                    except Exception as e:
-                        logger.debug(f"Failed to read image dimensions for {url}: {e}")
+            if not os.path.splitext(save_path)[1]:
+                save_path += f".{img_type}"
 
-                # If the filename didn't have an extension, add it
-                if not os.path.splitext(save_path)[1]:
-                    save_path += f".{img_type}"
+            async with aiofiles.open(save_path, "wb") as f:
+                await f.write(content)
 
-                async with aiofiles.open(save_path, "wb") as f:
-                    await f.write(content)
-
-                return save_path
-            else:
-                return None
+            return save_path
     except Exception as e:
-        logger.error(f"Error downloading image {url}: {e}")
+        logger.debug(f"Error downloading image {url}: {e}")
         return None

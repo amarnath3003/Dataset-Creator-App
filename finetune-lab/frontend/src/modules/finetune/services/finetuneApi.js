@@ -3,7 +3,7 @@
 // per-domain service files (modelApi/datasetApi/hardwareApi/trainingApi) now
 // re-export from here so existing imports keep working.
 
-const API = (import.meta.env.VITE_API_URL || "http://localhost:8000") + "/api";
+const API = (import.meta.env.VITE_API_URL || "http://localhost:8001") + "/api";
 
 async function req(path, { method = "GET", body, form, signal } = {}) {
   const opts = { method, signal, headers: {} };
@@ -50,11 +50,13 @@ export const datasets = {
     return req("/datasets/upload", { method: "POST", form });
   },
   validate: (path) => req("/datasets/validate", { method: "POST", body: { path } }),
+  remove: (id) => req(`/datasets/${encodeURIComponent(id)}`, { method: "DELETE" }),
   searchHf: (q) => req(`/datasets/search/hf?q=${encodeURIComponent(q)}`),
 };
 
 export const hardware = {
   gpus: () => req("/hardware/gpus"),
+  estimate: (payload) => req("/hardware/estimate", { method: "POST", body: payload }),
 };
 
 export const training = {

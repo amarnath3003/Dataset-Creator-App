@@ -2,7 +2,7 @@
     "alpaca": {
         "template": {
             "instruction": "{question}",
-            "input": "",
+            "input": "{input}",
             "output": "{answer}"
         }
     },
@@ -32,6 +32,23 @@
                     "content": "{answer}"
                 }
             ]
+        }
+    },
+    "chatml": {
+        "template": {
+            "text": "<|im_start|>user\n{question}<|im_end|>\n<|im_start|>assistant\n{answer}<|im_end|>"
+        }
+    },
+    "dpo": {
+        "template": {
+            "prompt": "{question}",
+            "chosen": "{answer}",
+            "rejected": "{rejected}"
+        }
+    },
+    "completion": {
+        "template": {
+            "text": "### Instruction:\n{question}\n\n### Response:\n{answer}"
         }
     }
 }

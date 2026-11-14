@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { projectApi } from '../api/api';
 import {
     ArrowLeft, Play, Upload, Settings, FileText, Download,
-    CheckCircle, AlertCircle, Loader2, BarChart2, Square, Zap, Globe
+    AlertCircle, Loader2, BarChart2, Square, Zap, Globe, Flame, Save, ArrowUpRight
 } from 'lucide-react';
 import SettingsPanel from '../components/SettingsPanel';
 import DebugDashboard from '../components/DebugDashboard';
@@ -12,6 +12,7 @@ import PromptEditor from '../components/PromptEditor';
 import ScrapingDashboard from './ScrapingDashboard';
 import { useToast } from '../components/Toast';
 import ConfirmModal from '../components/ConfirmModal';
+import { CustomSelect } from '../components/LLMSetup';
 
 export default function Workspace() {
     const { name } = useParams();
@@ -20,6 +21,7 @@ export default function Workspace() {
         chunk_size: 800,
         chunk_overlap: 100,
         similarity_threshold: 0.92,
+        chunking_method: 'recursive',
     });
     const [generationConfig, setGenerationConfig] = useState({
         provider: 'local',
@@ -33,8 +35,12 @@ export default function Workspace() {
         domain: 'general',
         format: 'alpaca',
         api_key: '',
+        base_url: '',
     });
-    const [uploadFile, setUploadFile] = useState(null);
+    const [uploadFiles, setUploadFiles] = useState([]);
+    const [uploadMode, setUploadMode] = useState('overwrite');
+    const [rawDraft, setRawDraft] = useState('');
+    const [finetuneExported, setFinetuneExported] = useState(null);
     const [showResumeModal, setShowResumeModal] = useState(false);
     const [showStopModal, setShowStopModal] = useState(false);
     const queryClient = useQueryClient();
@@ -47,14 +53,48 @@ export default function Workspace() {
         retry: false,
     });
 
+    const { data: rawInfo } = useQuery({
+        queryKey: ['raw_text', name],
+        queryFn: () => projectApi.getRawText(name),
+        enabled: !!status?.has_raw && activeTab === 'upload',
+    });
+
+    useEffect(() => {
+        if (rawInfo?.text !== undefined && !rawDraft) {
+            setRawDraft(rawInfo.text);
+        }
+    }, [rawInfo?.text, rawDraft]);
+
     const uploadMutation = useMutation({
-        mutationFn: (file) => projectApi.upload(name, file),
-        onSuccess: () => {
+        mutationFn: ({ files, mode }) => projectApi.upload(name, files, mode),
+        onSuccess: (res) => {
             queryClient.invalidateQueries(['status', name]);
+            queryClient.invalidateQueries(['raw_text', name]);
+            setRawDraft('');
+            setUploadFiles([]);
             setActiveTab('settings');
-            toast.success(`File uploaded successfully.`);
+            toast.success(res?.message || 'Files ingested successfully.');
         },
         onError: (e) => toast.error(`Upload failed: ${e.message}`),
+    });
+
+    const saveRawMutation = useMutation({
+        mutationFn: ({ text, mode }) => projectApi.saveRawText(name, text, mode),
+        onSuccess: () => {
+            queryClient.invalidateQueries(['status', name]);
+            queryClient.invalidateQueries(['raw_text', name]);
+            toast.success('Corpus text saved to raw.txt');
+        },
+        onError: (e) => toast.error(`Failed to save text: ${e.message}`),
+    });
+
+    const sendToFinetuneMutation = useMutation({
+        mutationFn: (fmt) => projectApi.exportToFinetune(name, fmt),
+        onSuccess: (data) => {
+            setFinetuneExported(data);
+            toast.success(`Sent ${data.row_count} rows (${data.filename}) to Finetune Lab!`);
+        },
+        onError: (e) => toast.error(e.response?.data?.detail || e.message),
     });
 
     const runPipelineMutation = useMutation({
@@ -246,76 +286,127 @@ export default function Workspace() {
 
                             {/* ▸ UPLOAD */}
                             {activeTab === 'upload' && (
-                                <div className="flex flex-col items-center justify-center min-h-[420px] gap-8">
-                                    {/* Drop zone */}
-                                    <label className="w-full max-w-md cursor-pointer">
-                                        <div className={`neu-trough rounded-2xl p-12 flex flex-col items-center gap-4 border-2 border-dashed transition-all duration-300 ${uploadFile
-                                            ? 'border-neu-accent/40 shadow-[inset_4px_4px_8px_#111315,inset_-4px_-4px_8px_#2c323a,0_0_20px_rgba(255,107,0,0.1)]'
-                                            : 'border-white/5 hover:border-neu-dim/20'
-                                            }`}>
-                                            <div className={`w-20 h-20 rounded-2xl flex items-center justify-center transition-all duration-300 ${uploadFile ? 'bg-neu-accent/10 shadow-[0_0_20px_rgba(255,107,0,0.3)]' : 'neu-plate'
+                                <div className="space-y-8">
+                                    <div className="flex flex-col items-center justify-center gap-6">
+                                        <div className="flex items-center gap-3 self-end">
+                                            <span className="text-[10px] font-bold uppercase tracking-widest text-neu-dim">Ingest Mode:</span>
+                                            {['overwrite', 'append'].map((m) => (
+                                                <button
+                                                    key={m}
+                                                    type="button"
+                                                    onClick={() => setUploadMode(m)}
+                                                    className={`neu-btn-sm text-[10px] uppercase font-bold ${uploadMode === m ? 'text-neu-accent ring-1 ring-neu-accent/40' : ''}`}
+                                                >
+                                                    {m}
+                                                </button>
+                                            ))}
+                                        </div>
+
+                                        <label className="w-full cursor-pointer">
+                                            <div className={`neu-trough rounded-2xl p-10 flex flex-col items-center gap-4 border-2 border-dashed transition-all duration-300 ${uploadFiles.length
+                                                ? 'border-neu-accent/40 shadow-[inset_4px_4px_8px_#111315,inset_-4px_-4px_8px_#2c323a,0_0_20px_rgba(255,107,0,0.1)]'
+                                                : 'border-white/5 hover:border-neu-dim/20'
                                                 }`}>
-                                                <Upload size={32} className={uploadFile ? 'text-neu-accent' : 'text-neu-dim'} strokeWidth={1.5} />
+                                                <div className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-all duration-300 ${uploadFiles.length ? 'bg-neu-accent/10 shadow-[0_0_20px_rgba(255,107,0,0.3)]' : 'neu-plate'}`}>
+                                                    <Upload size={28} className={uploadFiles.length ? 'text-neu-accent' : 'text-neu-dim'} strokeWidth={1.5} />
+                                                </div>
+
+                                                {uploadFiles.length ? (
+                                                    <>
+                                                        <p className="font-bold text-neu-text tracking-tight text-center">
+                                                            {uploadFiles.length === 1 ? uploadFiles[0].name : `${uploadFiles.length} files selected`}
+                                                        </p>
+                                                        <p className="text-[10px] font-mono text-neu-dim uppercase tracking-widest">
+                                                            {(uploadFiles.reduce((acc, f) => acc + f.size, 0) / 1024).toFixed(1)} KB total · Ready ({uploadMode})
+                                                        </p>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <p className="font-semibold text-neu-text">Select one or more source documents</p>
+                                                        <p className="text-[10px] font-mono text-neu-dim uppercase tracking-widest">
+                                                            Supports .TXT, .MD, .PDF, .DOCX, .CSV, .JSON, .JSONL, .HTML
+                                                        </p>
+                                                    </>
+                                                )}
+
+                                                <input
+                                                    type="file"
+                                                    multiple
+                                                    accept=".txt,.md,.markdown,.pdf,.docx,.csv,.json,.jsonl,.html,.htm"
+                                                    onChange={(e) => setUploadFiles(Array.from(e.target.files || []))}
+                                                    className="sr-only"
+                                                />
                                             </div>
+                                        </label>
 
-                                            {uploadFile ? (
-                                                <>
-                                                    <p className="font-bold text-neu-text tracking-tight">{uploadFile.name}</p>
-                                                    <p className="text-[10px] font-mono text-neu-dim uppercase tracking-widest">
-                                                        {(uploadFile.size / 1024).toFixed(1)} KB · Ready
-                                                    </p>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <p className="font-semibold text-neu-text">Select source text</p>
-                                                    <p className="text-[10px] font-mono text-neu-dim uppercase tracking-widest">TXT files only</p>
-                                                </>
+                                        <button
+                                            onClick={() => uploadFiles.length && uploadMutation.mutate({ files: uploadFiles, mode: uploadMode })}
+                                            disabled={!uploadFiles.length || uploadMutation.isPending}
+                                            className={`group relative flex items-center justify-center gap-4 px-10 py-4 rounded-[20px] font-bold tracking-widest text-[13px] uppercase touch-manipulation select-none outline-none ${!uploadFiles.length || uploadMutation.isPending
+                                                ? 'bg-[#15181b] text-neu-dim/30 shadow-[inset_4px_4px_10px_#0e1012,inset_-4px_-4px_10px_#272d33] cursor-not-allowed border-transparent'
+                                                : 'bg-neu-base text-neu-text shadow-[6px_6px_14px_#111315,-6px_-6px_14px_#2e343b] hover:shadow-[8px_8px_18px_#111315,-8px_-8px_18px_#2e343b] hover:-translate-y-0.5 border border-white/5 active:bg-neu-dark active:text-neu-accent active:shadow-[inset_4px_4px_10px_#0e1012,inset_-4px_-4px_10px_#272d33]'
+                                                }`}
+                                        >
+                                            <Zap size={18} className={uploadFiles.length ? 'text-neu-accent' : ''} />
+                                            <span>{uploadMutation.isPending ? 'Ingesting…' : `Ingest ${uploadFiles.length > 1 ? `${uploadFiles.length} Files` : 'Document'}`}</span>
+                                        </button>
+                                    </div>
+
+                                    {/* Direct Raw Text Paste / Editor */}
+                                    <div className="neu-trough p-6 rounded-2xl space-y-4">
+                                        <div className="flex flex-wrap items-center justify-between gap-3">
+                                            <div>
+                                                <h3 className="text-xs font-bold text-neu-dim uppercase tracking-widest">Direct Corpus Editor (raw.txt)</h3>
+                                                <p className="text-[10px] font-mono text-neu-dim/60 mt-0.5">
+                                                    Paste or edit raw training corpus text directly without uploading a file.
+                                                </p>
+                                            </div>
+                                            {rawInfo && (
+                                                <div className="neu-inset px-3 py-1.5 rounded-xl text-[10px] font-mono text-neu-accent">
+                                                    {rawInfo.words?.toLocaleString() || 0} words · {rawInfo.chars?.toLocaleString() || 0} chars
+                                                </div>
                                             )}
-
-                                            <input
-                                                type="file" accept=".txt"
-                                                onChange={(e) => setUploadFile(e.target.files[0])}
-                                                className="sr-only"
-                                            />
                                         </div>
-                                    </label>
 
-                                    {/* Upload CTA */}
-                                    <button
-                                        onClick={() => uploadFile && uploadMutation.mutate(uploadFile)}
-                                        disabled={!uploadFile || uploadMutation.isPending}
-                                        className={`group relative flex items-center justify-center gap-4 px-10 py-4 rounded-[20px] font-bold tracking-widest text-[13px] uppercase touch-manipulation select-none outline-none ${!uploadFile || uploadMutation.isPending
-                                            ? 'bg-[#15181b] text-neu-dim/30 shadow-[inset_4px_4px_10px_#0e1012,inset_-4px_-4px_10px_#272d33] cursor-not-allowed border-transparent'
-                                            : 'bg-neu-base text-neu-text shadow-[6px_6px_14px_#111315,-6px_-6px_14px_#2e343b] hover:shadow-[8px_8px_18px_#111315,-8px_-8px_18px_#2e343b] hover:-translate-y-0.5 border border-white/5 active:bg-neu-dark active:text-neu-accent active:shadow-[inset_4px_4px_10px_#0e1012,inset_-4px_-4px_10px_#272d33] active:border-black/40 active:scale-[0.98]'
-                                            }`}
-                                        style={{ transition: 'transform 0.1s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.1s cubic-bezier(0.4, 0, 0.2, 1), background 0.15s ease' }}
-                                    >
-                                        <div className={`flex items-center justify-center p-2 rounded-[12px] transition-all duration-150 ${!uploadFile || uploadMutation.isPending
-                                            ? 'bg-transparent text-neu-dim/30'
-                                            : 'bg-[#15181b] text-neu-accent shadow-[inset_2px_2px_4px_#0e1012,inset_-2px_-2px_4px_#272d33,0_0_12px_rgba(255,107,0,0.15)] ring-1 ring-neu-accent/20 group-active:drop-shadow-[0_0_8px_rgba(255,107,0,0.8)]'
-                                            }`}>
-                                            {uploadMutation.isPending
-                                                ? <Loader2 size={18} className="animate-spin" />
-                                                : <Zap size={18} />
-                                            }
-                                        </div>
-                                        <span className={!uploadFile || uploadMutation.isPending ? '' : 'group-hover:text-neu-accent group-active:text-neu-accent group-active:drop-shadow-[0_0_8px_rgba(255,107,0,0.4)] transition-colors'}>
-                                            {uploadMutation.isPending ? 'Uploading…' : 'Ingest File'}
-                                        </span>
-                                    </button>
+                                        <textarea
+                                            rows={7}
+                                            value={rawDraft}
+                                            onChange={(e) => setRawDraft(e.target.value)}
+                                            placeholder="Paste domain documentation, articles, markdown notes, or transcripts here..."
+                                            className="neu-textarea font-mono text-xs"
+                                        />
 
-                                    {status?.has_raw && (
-                                        <div className="flex items-center gap-3 neu-inset px-5 py-3 rounded-xl">
-                                            <div className="led led-green" />
-                                            <span className="text-xs font-bold text-green-400 tracking-widest uppercase">File Uploaded</span>
+                                        <div className="flex items-center justify-between gap-3">
+                                            {status?.has_raw ? (
+                                                <div className="flex items-center gap-2 neu-inset px-3 py-1.5 rounded-xl">
+                                                    <div className="led led-green" />
+                                                    <span className="text-[10px] font-bold text-green-400 tracking-widest uppercase">Corpus Ready</span>
+                                                </div>
+                                            ) : <span />}
+
+                                            <button
+                                                type="button"
+                                                disabled={!rawDraft.trim() || saveRawMutation.isPending}
+                                                onClick={() => saveRawMutation.mutate({ text: rawDraft, mode: 'overwrite' })}
+                                                className="neu-btn-sm text-neu-accent px-4 py-2"
+                                            >
+                                                <Save size={13} />
+                                                {saveRawMutation.isPending ? 'Saving...' : 'Save Corpus Text'}
+                                            </button>
                                         </div>
-                                    )}
+                                    </div>
                                 </div>
                             )}
 
                             {/* ▸ SCRAPER */}
                             {activeTab === 'scrape' && (
-                                <ScrapingDashboard />
+                                <ScrapingDashboard
+                                    onProceedToPipeline={() => {
+                                        queryClient.invalidateQueries(['status', name]);
+                                        queryClient.invalidateQueries(['raw_text', name]);
+                                        setActiveTab('settings');
+                                    }}
+                                />
                             )}
 
                             {/* ▸ SETTINGS */}
@@ -370,8 +461,14 @@ export default function Workspace() {
                                         <p className="text-[10px] font-bold text-neu-dim uppercase tracking-widest mb-4">Runtime Manifest</p>
                                         <div className="space-y-3">
                                             {[
-                                                ['Chunk Size', pipelineConfig.chunk_size],
-                                                ['Provider', generationConfig.provider === 'openai' ? 'OpenAI API' : 'Ollama (Local)'],
+                                                ['Chunking', `${pipelineConfig.chunk_size} tok (${pipelineConfig.chunking_method || 'recursive'})`],
+                                                ['Provider', generationConfig.provider === 'openai'
+                                                    ? 'OpenAI / Compatible'
+                                                    : generationConfig.provider === 'anthropic'
+                                                        ? 'Anthropic API'
+                                                        : generationConfig.provider === 'extractive'
+                                                            ? 'Offline Synthesizer'
+                                                            : 'Ollama (Local)'],
                                                 ['Model', generationConfig.model_name],
                                                 ['Format', generationConfig.format],
                                             ].map(([key, val]) => (
@@ -438,21 +535,31 @@ export default function Workspace() {
 
                             {/* ▸ EXPORT */}
                             {activeTab === 'export' && (
-                                <div className="flex flex-col items-center justify-center min-h-[420px] gap-8">
+                                <div className="flex flex-col items-center justify-center min-h-[420px] gap-6">
                                     <div className="text-center">
                                         <h2 className="text-2xl font-light text-neu-text tracking-tight">
                                             Export Dataset
                                         </h2>
                                         <p className="text-[10px] font-mono text-neu-dim uppercase tracking-widest mt-1">
-                                            Download your generated QA pairs
+                                            Download formatted JSONL or send directly to Finetune Lab
                                         </p>
                                     </div>
 
-                                    <div className="w-20 h-20 rounded-2xl flex items-center justify-center neu-plate">
-                                        <Download
-                                            size={32}
-                                            strokeWidth={1.5}
-                                            className={status?.has_qa ? 'text-neu-accent' : 'text-neu-dim/30'}
+                                    <div className="w-full max-w-sm">
+                                        <label className="block text-[10px] font-bold text-neu-dim tracking-widest uppercase mb-2 text-center">
+                                            Export Schema Format
+                                        </label>
+                                        <CustomSelect
+                                            value={generationConfig.format}
+                                            onChange={v => setGenerationConfig(prev => ({ ...prev, format: v }))}
+                                            options={[
+                                                { value: 'alpaca', label: 'Alpaca (Finetune Lab Standard)' },
+                                                { value: 'sharegpt', label: 'ShareGPT' },
+                                                { value: 'openai', label: 'OpenAI Chat' },
+                                                { value: 'chatml', label: 'ChatML' },
+                                                { value: 'dpo', label: 'DPO Preference' },
+                                                { value: 'completion', label: 'Completion / CPT' },
+                                            ]}
                                         />
                                     </div>
 
@@ -464,54 +571,74 @@ export default function Workspace() {
                                         </div>
                                     )}
 
-                                    <button
-                                        onClick={async () => {
-                                            try {
-                                                const fmt = generationConfig.format;
-                                                const response = await projectApi.export(name, fmt);
-                                                const contentType = response.headers['content-type'];
-                                                const isJson = contentType && contentType.includes('application/json');
-                                                const ext = isJson ? 'json' : 'jsonl';
+                                    <div className="flex flex-wrap items-center justify-center gap-4">
+                                        <button
+                                            onClick={async () => {
+                                                try {
+                                                    const fmt = generationConfig.format;
+                                                    const response = await projectApi.export(name, fmt);
+                                                    const contentType = response.headers['content-type'];
+                                                    const isJson = contentType && contentType.includes('application/json');
+                                                    const ext = isJson ? 'json' : 'jsonl';
 
-                                                const url = window.URL.createObjectURL(response.data);
-                                                const link = document.createElement('a');
-                                                link.href = url;
-                                                link.setAttribute('download', `${name}_${fmt}.${ext}`);
-                                                document.body.appendChild(link);
-                                                link.click();
-                                                toast.success('Dataset exported successfully.');
-                                            } catch (e) {
-                                                if (e.response?.data instanceof Blob) {
-                                                    const text = await e.response.data.text();
-                                                    try {
-                                                        const json = JSON.parse(text);
-                                                        toast.error(`Export failed: ${json.detail || 'Unknown error'}`);
-                                                    } catch {
-                                                        toast.error(`Export failed: ${text}`);
+                                                    const url = window.URL.createObjectURL(response.data);
+                                                    const link = document.createElement('a');
+                                                    link.href = url;
+                                                    link.setAttribute('download', `${name}_${fmt}.${ext}`);
+                                                    document.body.appendChild(link);
+                                                    link.click();
+                                                    toast.success('Dataset exported successfully.');
+                                                } catch (e) {
+                                                    if (e.response?.data instanceof Blob) {
+                                                        const text = await e.response.data.text();
+                                                        try {
+                                                            const json = JSON.parse(text);
+                                                            toast.error(`Export failed: ${json.detail || 'Unknown error'}`);
+                                                        } catch {
+                                                            toast.error(`Export failed: ${text}`);
+                                                        }
+                                                    } else {
+                                                        const serverMsg = e.response?.data?.detail || e.message;
+                                                        toast.error(`Export failed: ${serverMsg}`);
                                                     }
-                                                } else {
-                                                    const serverMsg = e.response?.data?.detail || e.message;
-                                                    toast.error(`Export failed: ${serverMsg}`);
                                                 }
-                                            }
-                                        }}
-                                        disabled={!status?.has_qa}
-                                        className={`group relative flex items-center justify-center gap-4 px-10 py-4 rounded-[20px] font-bold tracking-widest text-[13px] uppercase touch-manipulation select-none outline-none ${!status?.has_qa
-                                            ? 'bg-[#15181b] text-neu-dim/30 shadow-[inset_4px_4px_10px_#0e1012,inset_-4px_-4px_10px_#272d33] cursor-not-allowed border-transparent'
-                                            : 'bg-neu-base text-neu-text shadow-[6px_6px_14px_#111315,-6px_-6px_14px_#2e343b] hover:shadow-[8px_8px_18px_#111315,-8px_-8px_18px_#2e343b] hover:-translate-y-0.5 border border-white/5 active:bg-neu-dark active:text-neu-accent active:shadow-[inset_4px_4px_10px_#0e1012,inset_-4px_-4px_10px_#272d33] active:border-black/40 active:scale-[0.98]'
-                                            }`}
-                                        style={{ transition: 'transform 0.1s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.1s cubic-bezier(0.4, 0, 0.2, 1), background 0.15s ease' }}
-                                    >
-                                        <div className={`flex items-center justify-center p-2 rounded-[12px] transition-all duration-150 ${!status?.has_qa
-                                            ? 'bg-transparent text-neu-dim/30'
-                                            : 'bg-[#15181b] text-neu-accent shadow-[inset_2px_2px_4px_#0e1012,inset_-2px_-2px_4px_#272d33,0_0_12px_rgba(255,107,0,0.15)] ring-1 ring-neu-accent/20 group-active:drop-shadow-[0_0_8px_rgba(255,107,0,0.8)]'
-                                            }`}>
-                                            <Download size={18} />
+                                            }}
+                                            disabled={!status?.has_qa}
+                                            className={`group relative flex items-center justify-center gap-3 px-8 py-4 rounded-[20px] font-bold tracking-widest text-[13px] uppercase touch-manipulation select-none outline-none ${!status?.has_qa
+                                                ? 'bg-[#15181b] text-neu-dim/30 shadow-[inset_4px_4px_10px_#0e1012,inset_-4px_-4px_10px_#272d33] cursor-not-allowed border-transparent'
+                                                : 'bg-neu-base text-neu-text shadow-[6px_6px_14px_#111315,-6px_-6px_14px_#2e343b] hover:shadow-[8px_8px_18px_#111315,-8px_-8px_18px_#2e343b] hover:-translate-y-0.5 border border-white/5 active:bg-neu-dark active:text-neu-accent active:shadow-[inset_4px_4px_10px_#0e1012,inset_-4px_-4px_10px_#272d33]'
+                                                }`}
+                                        >
+                                            <Download size={18} className={status?.has_qa ? 'text-neu-accent' : ''} />
+                                            <span>Download File</span>
+                                        </button>
+
+                                        <button
+                                            onClick={() => sendToFinetuneMutation.mutate(generationConfig.format)}
+                                            disabled={!status?.has_qa || sendToFinetuneMutation.isPending}
+                                            className={`group relative flex items-center justify-center gap-3 px-8 py-4 rounded-[20px] font-bold tracking-widest text-[13px] uppercase touch-manipulation select-none outline-none ${!status?.has_qa || sendToFinetuneMutation.isPending
+                                                ? 'bg-[#15181b] text-neu-dim/30 shadow-[inset_4px_4px_10px_#0e1012,inset_-4px_-4px_10px_#272d33] cursor-not-allowed border-transparent'
+                                                : 'bg-[#15181b] text-neu-accent shadow-[inset_2px_2px_4px_#0e1012,inset_-2px_-2px_4px_#272d33,0_0_15px_rgba(255,107,0,0.18)] ring-1 ring-neu-accent/30 hover:-translate-y-0.5'
+                                                }`}
+                                        >
+                                            {sendToFinetuneMutation.isPending ? <Loader2 size={18} className="animate-spin" /> : <Flame size={18} />}
+                                            <span>{sendToFinetuneMutation.isPending ? 'Sending…' : 'Send to Finetune Lab'}</span>
+                                        </button>
+                                    </div>
+
+                                    {finetuneExported && (
+                                        <div className="neu-trough px-5 py-3 rounded-2xl flex items-center gap-4 border border-neu-accent/20">
+                                            <span className="text-xs font-mono text-green-400">
+                                                Synced {finetuneExported.row_count} rows ({finetuneExported.filename})
+                                            </span>
+                                            <a
+                                                href="http://localhost:5174/finetune/new/dataset"
+                                                className="neu-btn-sm text-neu-accent no-underline"
+                                            >
+                                                Open Finetune Lab <ArrowUpRight size={12} />
+                                            </a>
                                         </div>
-                                        <span className={!status?.has_qa ? '' : 'group-hover:text-neu-accent group-active:text-neu-accent group-active:drop-shadow-[0_0_8px_rgba(255,107,0,0.4)] transition-colors'}>
-                                            Download JSONL
-                                        </span>
-                                    </button>
+                                    )}
 
                                     {!status?.has_qa && (
                                         <p className="text-[10px] font-mono text-neu-dim uppercase tracking-widest">
